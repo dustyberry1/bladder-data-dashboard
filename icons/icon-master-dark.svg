@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- dark version -->
+  <rect width="1024" height="1024" rx="230" fill="#080d1a"/>
+  <g transform="translate(114, 114)">
+    <!-- row 1 -->
+    <rect x="0"   y="0"   width="160" height="160" rx="22" fill="#38bdf8" opacity="0.40"/>
+    <rect x="212" y="0"   width="160" height="160" rx="22" fill="#38bdf8" opacity="0.65"/>
+    <rect x="424" y="0"   width="160" height="160" rx="22" fill="#38bdf8" opacity="0.85"/>
+    <rect x="636" y="0"   width="160" height="160" rx="22" fill="#7dd3fc" opacity="1.0"/>
+    <!-- row 2 -->
+    <rect x="0"   y="212" width="160" height="160" rx="22" fill="#2E75B6" opacity="0.35"/>
+    <rect x="212" y="212" width="160" height="160" rx="22" fill="#2E75B6" opacity="0.60"/>
+    <rect x="424" y="212" width="160" height="160" rx="22" fill="#38bdf8" opacity="0.80"/>
+    <rect x="636" y="212" width="160" height="160" rx="22" fill="#38bdf8" opacity="0.95"/>
+    <!-- row 3 -->
+    <rect x="0"   y="424" width="160" height="160" rx="22" fill="#1e40af" opacity="0.40"/>
+    <rect x="212" y="424" width="160" height="160" rx="22" fill="#2E75B6" opacity="0.55"/>
+    <rect x="424" y="424" width="160" height="160" rx="22" fill="#2E75B6" opacity="0.75"/>
+    <rect x="636" y="424" width="160" height="160" rx="22" fill="#38bdf8" opacity="0.60"/>
+    <!-- row 4 -->
+    <rect x="0"   y="636" width="160" height="160" rx="22" fill="#1e40af" opacity="0.25"/>
+    <rect x="212" y="636" width="160" height="160" rx="22" fill="#1e40af" opacity="0.45"/>
+    <rect x="424" y="636" width="160" height="160" rx="22" fill="#2E75B6" opacity="0.55"/>
+    <rect x="636" y="636" width="160" height="160" rx="22" fill="#2E75B6" opacity="0.40"/>
+  </g>
+</svg>

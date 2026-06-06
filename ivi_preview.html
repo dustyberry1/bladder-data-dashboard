@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>IVI Chart Options Preview</title>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<style>
+  body { background: #080b10; color: #e2e8f5; font-family: 'DM Mono', monospace, sans-serif; padding: 24px; }
+  h1 { font-size: 14px; color: #5a6480; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 32px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  .card { background: #0e1320; border: 1px solid #1e2535; border-radius: 8px; padding: 16px; }
+  .card-title { font-size: 11px; color: #5a6480; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+  .card-subtitle { font-size: 10px; color: #3a4260; margin-bottom: 12px; }
+  svg text { font-family: 'DM Mono', monospace, sans-serif; }
+  .note { font-size: 10px; color: #5a6480; margin-top: 10px; line-height: 1.5; }
+  .pro { color: #56d48a; }
+  .con { color: #f06070; }
+</style>
+</head>
+<body>
+<h1>IVI Distribution — Visualization Options</h1>
+<div class="grid">
+  <div class="card">
+    <div class="card-title">Option A — Grouped Bars</div>
+    <div class="card-subtitle">Side-by-side per bin</div>
+    <svg id="chartA"></svg>
+    <div class="note">
+      <span class="pro">+ Direct bin-by-bin comparison</span><br>
+      <span class="pro">+ No occlusion</span><br>
+      <span class="con">− Bars are narrow with 16 bins</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Option B — Step-line Area</div>
+    <div class="card-subtitle">Filled step-function overlay</div>
+    <svg id="chartB"></svg>
+    <div class="note">
+      <span class="pro">+ Both distributions always visible</span><br>
+      <span class="pro">+ Shape/peaks easy to read</span><br>
+      <span class="con">− Exact bin values less obvious</span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Option C — Mirrored Bars</div>
+    <div class="card-subtitle">Prior ↓ · Last 30d ↑</div>
+    <svg id="chartC"></svg>
+    <div class="note">
+      <span class="pro">+ Zero occlusion, elegant</span><br>
+      <span class="pro">+ Divergence immediately obvious</span><br>
+      <span class="con">− Less familiar chart form</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const C = {
+  bg:'#080b10', surface:'#0e1320', surface2:'#141929',
+  border:'#1e2535', border2:'#252d40',
+  text:'#e2e8f5', muted:'#5a6480', dim:'#3a4260',
+  accent:'#4fc3f7', green:'#56d48a', yellow:'#f5c842',
+  red:'#f06070', purple:'#9d7fe8', orange:'#f5934a', teal:'#3ecfb8'
+};
+
+// Realistic sample data: % of voids per 30-min bin (0–480 min)
+// Bins: 0-30, 30-60, 60-90, 90-120, 120-150, 150-180, 180-210, 210-240,
+//       240-270, 270-300, 300-330, 330-360, 360-390, 390-420, 420-450, 450-480
+const prevPct = [1.2, 3.4, 8.1, 16.2, 21.3, 18.5, 12.4, 8.6, 4.8, 2.7, 1.4, 0.7, 0.4, 0.2, 0.1, 0.0];
+const currPct = [0.8, 2.1, 5.9, 12.3, 17.8, 19.2, 16.1, 11.4, 7.2, 3.8, 2.0, 0.9, 0.3, 0.1, 0.1, 0.0];
+
+const bins = d3.range(0, 481, 30);
+const binData = pcts => pcts.map((pct, i) => ({ x0: bins[i], x1: bins[i+1], pct }));
+
+const prevBins = binData(prevPct);
+const currBins = binData(currPct);
+
+const tickVals = [0, 60, 120, 180, 240, 300, 360, 420, 480];
+const tickFmt = d => d === 480 ? '8h+' : d === 0 ? '0' : d < 60 ? `${d}m` : `${d/60}h`;
+
+// ─── CHART A: Grouped bars ─────────────────────────────────────────────────
+(function() {
+  const W = 320, H = 200;
+  const M = { top: 20, right: 12, bottom: 30, left: 36 };
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+
+  const svg = d3.select('#chartA').attr('width', W).attr('height', H);
+  const g = svg.append('g').attr('transform', `translate(${M.left},${M.top})`);
+
+  const xScale = d3.scaleLinear().domain([0, 480]).range([0, w]);
+  const yMax = Math.max(d3.max(currBins, d => d.pct), d3.max(prevBins, d => d.pct));
+  const yScale = d3.scaleLinear().domain([0, yMax + 2]).range([h, 0]);
+
+  const binW = xScale(30) - xScale(0);
+  const barW = (binW - 3) / 2;
+
+  // Grid lines
+  yScale.ticks(4).forEach(t => {
+    g.append('line').attr('x1', 0).attr('x2', w)
+     .attr('y1', yScale(t)).attr('y2', yScale(t))
+     .attr('stroke', C.border).attr('stroke-width', 0.5);
+  });
+
+  // Prior 30d bars (left of pair)
+  prevBins.forEach(d => {
+    g.append('rect')
+      .attr('x', xScale(d.x0) + 1)
+      .attr('y', yScale(d.pct))
+      .attr('width', barW)
+      .attr('height', h - yScale(d.pct))
+      .attr('fill', C.muted)
+      .attr('opacity', 0.6);
+  });
+
+  // Last 30d bars (right of pair)
+  currBins.forEach(d => {
+    g.append('rect')
+      .attr('x', xScale(d.x0) + 1 + barW + 1)
+      .attr('y', yScale(d.pct))
+      .attr('width', barW)
+      .attr('height', h - yScale(d.pct))
+      .attr('fill', C.accent)
+      .attr('opacity', 0.8);
+  });
+
+  // Axes
+  g.append('g').attr('transform', `translate(0,${h})`)
+    .call(d3.axisBottom(xScale).tickValues(tickVals).tickFormat(tickFmt).tickSize(3))
+    .call(ax => ax.select('.domain').attr('stroke', C.border))
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  g.append('g')
+    .call(d3.axisLeft(yScale).ticks(4).tickFormat(d => `${d}%`).tickSize(3))
+    .call(ax => ax.select('.domain').attr('stroke', C.border))
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  // Legend
+  [[C.muted, 'Prior 30d'], [C.accent, 'Last 30d']].forEach(([col, lbl], i) => {
+    const lx = w - 110 + i * 58;
+    g.append('rect').attr('x', lx).attr('y', 4).attr('width', 8).attr('height', 8).attr('fill', col).attr('opacity', 0.8);
+    g.append('text').attr('x', lx + 11).attr('y', 12).attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace').text(lbl);
+  });
+})();
+
+// ─── CHART B: Step-line area overlay ──────────────────────────────────────
+(function() {
+  const W = 320, H = 200;
+  const M = { top: 20, right: 12, bottom: 30, left: 36 };
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+
+  const svg = d3.select('#chartB').attr('width', W).attr('height', H);
+  const g = svg.append('g').attr('transform', `translate(${M.left},${M.top})`);
+
+  const xScale = d3.scaleLinear().domain([0, 480]).range([0, w]);
+  const yMax = Math.max(d3.max(currBins, d => d.pct), d3.max(prevBins, d => d.pct));
+  const yScale = d3.scaleLinear().domain([0, yMax + 2]).range([h, 0]);
+
+  // Build step-line points: for each bin use x0 and x1 at the same pct
+  function stepPoints(bins) {
+    const pts = [];
+    bins.forEach(d => {
+      pts.push([d.x0, d.pct]);
+      pts.push([d.x1, d.pct]);
+    });
+    return pts;
+  }
+
+  function areaPoints(bins, baseline) {
+    const top = stepPoints(bins);
+    const bot = [[bins[0].x0, baseline], ...bins.map(d => [d.x0, baseline]), [bins[bins.length-1].x1, baseline]];
+    return [...top, ...[...bot].reverse()];
+  }
+
+  // Grid lines
+  yScale.ticks(4).forEach(t => {
+    g.append('line').attr('x1', 0).attr('x2', w)
+     .attr('y1', yScale(t)).attr('y2', yScale(t))
+     .attr('stroke', C.border).attr('stroke-width', 0.5);
+  });
+
+  const lineGen = d3.line().x(d => xScale(d[0])).y(d => yScale(d[1]));
+
+  // Prior 30d — filled area + step border
+  const prevArea = areaPoints(prevBins, 0);
+  g.append('path')
+    .attr('d', lineGen(prevArea) + 'Z')
+    .attr('fill', C.muted)
+    .attr('opacity', 0.15);
+  g.append('path')
+    .attr('d', lineGen(stepPoints(prevBins)))
+    .attr('fill', 'none')
+    .attr('stroke', C.muted)
+    .attr('stroke-width', 1.5)
+    .attr('opacity', 0.7);
+
+  // Last 30d — filled area + step border
+  const currArea = areaPoints(currBins, 0);
+  g.append('path')
+    .attr('d', lineGen(currArea) + 'Z')
+    .attr('fill', C.accent)
+    .attr('opacity', 0.18);
+  g.append('path')
+    .attr('d', lineGen(stepPoints(currBins)))
+    .attr('fill', 'none')
+    .attr('stroke', C.accent)
+    .attr('stroke-width', 1.5)
+    .attr('opacity', 0.9);
+
+  // Axes
+  g.append('g').attr('transform', `translate(0,${h})`)
+    .call(d3.axisBottom(xScale).tickValues(tickVals).tickFormat(tickFmt).tickSize(3))
+    .call(ax => ax.select('.domain').attr('stroke', C.border))
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  g.append('g')
+    .call(d3.axisLeft(yScale).ticks(4).tickFormat(d => `${d}%`).tickSize(3))
+    .call(ax => ax.select('.domain').attr('stroke', C.border))
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  // Legend
+  [[C.muted, 'Prior 30d'], [C.accent, 'Last 30d']].forEach(([col, lbl], i) => {
+    const lx = w - 110 + i * 58;
+    g.append('line').attr('x1', lx).attr('x2', lx + 14).attr('y1', 8).attr('y2', 8)
+     .attr('stroke', col).attr('stroke-width', 1.5).attr('opacity', 0.9);
+    g.append('text').attr('x', lx + 17).attr('y', 12).attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace').text(lbl);
+  });
+})();
+
+// ─── CHART C: Mirrored bars ─────────────────────────────────────────────────
+(function() {
+  const W = 320, H = 200;
+  const M = { top: 20, right: 12, bottom: 16, left: 36 };
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const mid = h / 2;  // axis in the middle
+
+  const svg = d3.select('#chartC').attr('width', W).attr('height', H);
+  const g = svg.append('g').attr('transform', `translate(${M.left},${M.top})`);
+
+  const xScale = d3.scaleLinear().domain([0, 480]).range([0, w]);
+  const yMax = Math.max(d3.max(currBins, d => d.pct), d3.max(prevBins, d => d.pct));
+  // Each half gets mid pixels
+  const yScale = d3.scaleLinear().domain([0, yMax + 2]).range([0, mid - 2]);
+
+  const binW = xScale(30) - xScale(0);
+  const barW = binW - 2;
+
+  // Center divider line
+  g.append('line').attr('x1', 0).attr('x2', w).attr('y1', mid).attr('y2', mid)
+   .attr('stroke', C.border2).attr('stroke-width', 1);
+
+  // Prior 30d bars — grow downward from center
+  prevBins.forEach(d => {
+    const barH = yScale(d.pct);
+    g.append('rect')
+      .attr('x', xScale(d.x0) + 1)
+      .attr('y', mid)
+      .attr('width', barW)
+      .attr('height', barH)
+      .attr('fill', C.muted)
+      .attr('opacity', 0.55);
+  });
+
+  // Last 30d bars — grow upward from center
+  currBins.forEach(d => {
+    const barH = yScale(d.pct);
+    g.append('rect')
+      .attr('x', xScale(d.x0) + 1)
+      .attr('y', mid - barH)
+      .attr('width', barW)
+      .attr('height', barH)
+      .attr('fill', C.accent)
+      .attr('opacity', 0.8);
+  });
+
+  // X axis at center
+  g.append('g').attr('transform', `translate(0,${mid})`)
+    .call(d3.axisBottom(xScale).tickValues(tickVals).tickFormat(tickFmt).tickSize(3))
+    .call(ax => ax.select('.domain').remove())
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace').attr('dy', '1em'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  // Y labels — top half (last 30d)
+  const yScaleTop = d3.scaleLinear().domain([0, yMax + 2]).range([mid, 0]);
+  g.append('g')
+    .call(d3.axisLeft(yScaleTop).ticks(3).tickFormat(d => `${d}%`).tickSize(3))
+    .call(ax => ax.select('.domain').attr('stroke', C.border))
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 7).attr('font-family', 'DM Mono,monospace'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  // Y labels — bottom half (prior 30d), mirrored
+  const yScaleBot = d3.scaleLinear().domain([0, yMax + 2]).range([mid, h]);
+  g.append('g')
+    .call(d3.axisLeft(yScaleBot).ticks(3).tickFormat(d => d > 0 ? `${d}%` : '').tickSize(3))
+    .call(ax => ax.select('.domain').attr('stroke', C.border))
+    .call(ax => ax.selectAll('text').attr('fill', C.muted).attr('font-size', 7).attr('font-family', 'DM Mono,monospace'))
+    .call(ax => ax.selectAll('.tick line').attr('stroke', C.border));
+
+  // Labels
+  g.append('text').attr('x', 2).attr('y', 10).attr('fill', C.accent).attr('font-size', 8).attr('font-family', 'DM Mono,monospace').attr('opacity', 0.8).text('Last 30d ↑');
+  g.append('text').attr('x', 2).attr('y', h - 2).attr('fill', C.muted).attr('font-size', 8).attr('font-family', 'DM Mono,monospace').attr('opacity', 0.7).text('Prior 30d ↓');
+})();
+</script>
+</body>
+</html>

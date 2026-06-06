@@ -1,0 +1,2613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#080b10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bladder">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<title>Bladder Health Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #080b10;
+    --surface:  #0e1320;
+    --surface2: #141929;
+    --border:   #1e2535;
+    --border2:  #252d40;
+    --text:     #e2e8f5;
+    --muted:    #5a6480;
+    --dim:      #3a4260;
+    --accent:   #4fc3f7;
+    --green:    #56d48a;
+    --yellow:   #f5c842;
+    --red:      #f06070;
+    --purple:   #9d7fe8;
+    --orange:   #f5934a;
+    --teal:     #3ecfb8;
+    --font-mono: 'DM Mono', monospace;
+    --font-head: 'Syne', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    height: -webkit-fill-available;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+    min-height: -webkit-fill-available;
+    padding: 24px;
+    padding-top: max(24px, env(safe-area-inset-top));
+    padding-left: max(24px, env(safe-area-inset-left));
+    padding-right: max(24px, env(safe-area-inset-right));
+    padding-bottom: max(24px, env(safe-area-inset-bottom));
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overscroll-behavior-y: none;
+  }
+
+  /* ── Tooltip ─────────────────────────────────────────────── */
+  #tt {
+    position: fixed;
+    pointer-events: none;
+    background: #0e1320;
+    border: 1px solid #252d40;
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: #e2e8f5;
+    line-height: 1.7;
+    z-index: 9999;
+    max-width: 220px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  #tt.visible { opacity: 1; }
+  #tt .tt-date { font-size: 10px; color: #5a6480; margin-bottom: 4px; letter-spacing: 0.04em; }
+  #tt .tt-row  { display: flex; justify-content: space-between; gap: 16px; }
+  #tt .tt-key  { color: #5a6480; }
+  #tt .tt-val  { font-weight: 500; }
+  #tt .tt-val.good   { color: #56d48a; }
+  #tt .tt-val.warn   { color: #f5c842; }
+  #tt .tt-val.bad    { color: #f06070; }
+  #tt .tt-val.accent { color: #4fc3f7; }
+  #tt .tt-excl  { font-size: 10px; color: #f5c842; margin-top: 5px; border-top: 1px solid #1e2535; padding-top: 4px; }
+  #tt .tt-tzadj { font-size: 10px; color: #4fc3f7; margin-top: 5px; border-top: 1px solid #1e2535; padding-top: 4px; }
+
+  /* Upload state */
+  #upload-screen {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 24px;
+  }
+
+  .upload-box {
+    border: 1.5px dashed var(--border2);
+    border-radius: 12px;
+    padding: 64px 80px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--surface);
+  }
+  .upload-box:hover, .upload-box.drag-over {
+    border-color: var(--accent);
+    background: rgba(79,195,247,0.04);
+  }
+  .upload-box h2 {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+  }
+  .upload-box p { color: var(--muted); font-size: 12px; }
+  .upload-icon { font-size: 40px; margin-bottom: 16px; opacity: 0.5; }
+
+  /* Dashboard */
+  #dashboard { display: none; }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left h1 {
+    font-family: var(--font-head);
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+  .header-left p { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .header-right { display: flex; gap: 12px; align-items: center; }
+  .reload-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    transition: all 0.15s;
+    min-height: 36px;
+  }
+  .reload-btn:hover { color: var(--text); border-color: var(--dim); }
+  .last-updated { color: var(--muted); font-size: 11px; }
+  .version-tag {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--dim);
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  /* Touch / PWA optimizations */
+  button, .toggle-btn, .reload-btn, .upload-box {
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+  .reload-btn { min-height: 44px; }
+  .toggle-btn { min-height: 36px; }
+  .scorecard { -webkit-overflow-scrolling: touch; }
+  table { -webkit-overflow-scrolling: touch; }
+
+  /* Headline metrics */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent-color, var(--accent));
+  }
+  .metric-label {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+  .metric-value {
+    font-family: var(--font-head);
+    font-size: 32px;
+    font-weight: 800;
+    line-height: 1;
+    color: var(--accent-color, var(--text));
+  }
+  .metric-unit  { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 3px; }
+
+  /* 7-day trend banner */
+  #trend-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    border-radius: 10px;
+    padding: 13px 18px;
+    margin-top: 0;
+    margin-bottom: 24px;
+    border-left-width: 3px;
+    border-left-style: solid;
+    background: rgba(var(--trend-rgb), 0.05);
+    border-top: 1px solid rgba(var(--trend-rgb), 0.15);
+    border-right: 1px solid rgba(var(--trend-rgb), 0.15);
+    border-bottom: 1px solid rgba(var(--trend-rgb), 0.15);
+    border-left-color: var(--trend-color);
+  }
+  .trend-score {
+    font-family: var(--font-head);
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1.2;
+    color: var(--trend-color);
+    white-space: nowrap;
+  }
+  .trend-arrow {
+    font-size: 22px;
+    font-weight: 300;
+    color: var(--trend-color);
+    opacity: 0.75;
+    margin-left: 5px;
+  }
+  .trend-divider {
+    width: 1px;
+    align-self: stretch;
+    background: rgba(var(--trend-rgb), 0.15);
+    flex-shrink: 0;
+  }
+  .trend-text { flex: 1; min-width: 0; padding-top: 2px; }
+  .trend-phrase {
+    font-family: var(--font-head);
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--trend-color);
+    line-height: 1.3;
+  }
+  .trend-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+  .metric-sub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .metric-delta {
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .delta-up   { color: var(--green); }
+  .delta-down { color: var(--red); }
+  .delta-flat { color: var(--muted); }
+
+  /* Charts grid */
+  .charts-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .charts-grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .chart-full { grid-column: 1 / -1; }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .chart-title {
+    font-family: var(--font-head);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .chart-sub {
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .chart-area { width: 100%; }
+
+  /* Intervention scorecard */
+  .scorecard {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+  .scorecard-title {
+    font-family: var(--font-head);
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .scorecard-sub { font-size: 10px; color: var(--muted); margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 400;
+  }
+  td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .pill-med   { background: rgba(79,195,247,0.12);  color: var(--accent); }
+  .pill-supp  { background: rgba(86,212,138,0.12);  color: var(--green); }
+  .pill-proc  { background: rgba(157,127,232,0.12); color: var(--purple); }
+  .pill-upcoming { background: rgba(245,147,74,0.12); color: var(--orange); }
+
+  .delta-cell { font-weight: 500; }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .neu { color: var(--muted); }
+
+  /* SVG defaults */
+  .axis text { fill: var(--muted); font-family: var(--font-mono); font-size: 10px; }
+  .axis path, .axis line { stroke: var(--border2); }
+  .grid line { stroke: var(--border); stroke-dasharray: 2,3; }
+  .grid path { stroke: none; }
+
+  /* Protocol timeline */
+  .timeline-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .timeline-row:last-child { border-bottom: none; }
+  .tl-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tl-label { flex: 1; font-size: 12px; }
+  .tl-date  { font-size: 11px; color: var(--muted); }
+  .tl-status { font-size: 10px; }
+  .status-active   { color: var(--green); }
+  .status-complete { color: var(--muted); }
+  .status-upcoming { color: var(--orange); }
+
+  .toggle-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--muted);
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    transition: all 0.15s;
+  }
+  .toggle-btn:hover  { color: var(--text); }
+  .toggle-btn.active { background: var(--border2); color: var(--text); border-color: var(--dim); }
+
+  /* Responsive — tablet */
+  @media (max-width: 1100px) {
+    .metrics-grid { grid-template-columns: repeat(3, 1fr); }
+    .charts-grid  { grid-template-columns: 1fr; }
+    .charts-grid-3 { grid-template-columns: 1fr; }
+    .chart-full   { grid-column: 1; }
+  }
+
+  /* Responsive — mobile */
+  @media (max-width: 600px) {
+    body { font-size: 12px; }
+
+    /* Upload screen */
+    .upload-box { padding: 32px 20px; }
+    .upload-box h2 { font-size: 17px; }
+    .upload-icon { font-size: 28px; }
+
+    /* Header */
+    .header {
+      flex-direction: row;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+      padding-bottom: 14px;
+    }
+    .header-left { flex: 1; min-width: 0; }
+    .header-left h1 { font-size: 19px; }
+    .header-right { flex-shrink: 0; align-items: center; }
+    .version-tag { display: none; }
+    .last-updated { display: none; }
+
+    /* Metrics — 2 columns on mobile */
+    .metrics-grid {
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .metric-card { padding: 12px 14px; }
+    .metric-value { font-size: 26px; }
+    .metric-label { font-size: 9px; }
+    .metric-sub, .metric-delta { font-size: 9px; }
+
+    /* Trend banner — compact on mobile */
+    #trend-banner { gap: 10px; padding: 10px 12px; margin-bottom: 16px; }
+    .trend-score  { font-size: 28px; line-height: 1.25; }
+    .trend-arrow  { font-size: 18px; margin-left: 3px; }
+    .trend-phrase { font-size: 13px; }
+    .trend-divider { display: none; }
+    .trend-sub    { font-size: 10px; line-height: 1.4; margin-top: 2px; }
+    .trend-text   { padding-top: 1px; }
+
+    /* Charts */
+    .charts-grid { gap: 10px; margin-bottom: 10px; }
+    .chart-card { padding: 14px; }
+    .chart-title { font-size: 12px; }
+    .chart-sub { font-size: 9px; margin-bottom: 10px; }
+
+    /* Toggle buttons — bigger tap targets */
+    .toggle-btn {
+      padding: 6px 14px;
+      font-size: 11px;
+      min-height: 32px;
+    }
+
+    /* Scorecard table — horizontal scroll */
+    .scorecard { padding: 14px; overflow-x: auto; }
+    table { min-width: 600px; }
+    td, th { padding: 6px 8px; font-size: 10px; }
+
+    /* Protocol timeline */
+    .tl-label { font-size: 11px; }
+    .tl-date  { font-size: 10px; }
+  }
+
+  /* Mobile — smaller padding respecting safe areas */
+  @media (max-width: 600px) {
+    body {
+      padding: 12px;
+      padding-top: max(12px, env(safe-area-inset-top));
+      padding-left: max(12px, env(safe-area-inset-left));
+      padding-right: max(12px, env(safe-area-inset-right));
+      padding-bottom: max(12px, env(safe-area-inset-bottom));
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Shared Tooltip -->
+<div id="tt"></div>
+
+<!-- Upload Screen -->
+<div id="upload-screen">
+  <div>
+    <div style="font-family:'Syne',sans-serif;font-size:32px;font-weight:800;text-align:center;margin-bottom:6px;">
+      Bladder Health Dashboard
+    </div>
+    <div style="color:var(--muted);text-align:center;font-size:12px;">
+      19-month void tracking analysis
+    </div>
+    <div style="color:var(--muted);text-align:center;font-size:10px;margin-top:4px;font-family:var(--font-mono);" id="upload-version"></div>
+  </div>
+  <div class="upload-box" id="upload-box" onclick="document.getElementById('csv-input').click()">
+    <div class="upload-icon">⬆</div>
+    <h2>Drop your P App CSV export</h2>
+    <p>or click to select file</p>
+    <p style="margin-top:8px;font-size:11px;word-break:break-word;">Expected: P App CSV export (Pee Date and Time column, UTC timestamps)</p>
+  </div>
+  <input type="file" id="csv-input" accept=".csv" style="display:none" onchange="handleFile(event)">
+  <div id="upload-error" style="display:none;color:#f06070;font-family:var(--font-mono);font-size:12px;text-align:center;max-width:420px;background:rgba(240,96,112,0.08);border:1px solid rgba(240,96,112,0.3);border-radius:8px;padding:12px 16px;line-height:1.5;"></div>
+  <button onclick="loadSampleData()" style="background:transparent;border:1px solid var(--border2);color:var(--muted);padding:8px 20px;border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:12px;">
+    Load demo data (last 90 days simulated)
+  </button>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard">
+  <div class="header">
+    <div class="header-left">
+      <h1>Bladder Health Dashboard</h1>
+      <p id="data-range">—</p>
+    </div>
+    <div class="header-right">
+      <span class="version-tag" id="app-version"></span>
+      <span class="last-updated" id="last-updated">—</span>
+      <button class="reload-btn" onclick="document.getElementById('csv-input2').click()">↑ New Export</button>
+      <input type="file" id="csv-input2" accept=".csv" style="display:none" onchange="handleFile(event)">
+    </div>
+  </div>
+
+  <!-- Headline Metrics -->
+  <div class="metrics-grid" id="metrics-grid"></div>
+
+  <!-- 7-Day Trend Banner -->
+  <div id="trend-banner" style="display:none"></div>
+
+  <!-- BHS History — full width -->
+  <div class="charts-grid">
+    <div class="chart-card chart-full">
+      <div class="chart-title">BHS Score — Full History</div>
+      <div class="chart-sub">30-day rolling BHS · absolute scale (100 = ≤7 voids/day, 0% flare) · intervention markers</div>
+      <div class="chart-area" id="chart-bhs"></div>
+    </div>
+
+    <!-- Nocturia trend -->
+    <div class="chart-card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+        <div class="chart-title">Nocturia</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="toggle-btn active" id="noc-win-total" onclick="setNocWindow('total')">Total</button>
+          <button class="toggle-btn" id="noc-win-true" onclick="setNocWindow('true')">True (12:30–6am)</button>
+          <button class="toggle-btn" id="noc-win-early" onclick="setNocWindow('early')">Early (6–7:30am)</button>
+          <span style="width:1px;background:var(--border2);margin:0 2px"></span>
+          <button class="toggle-btn active" id="noc-btn-30" onclick="setNocView('30')">Last 90d</button>
+          <button class="toggle-btn" id="noc-btn-all" onclick="setNocView('all')">All time</button>
+        </div>
+      </div>
+      <div class="chart-sub" id="noc-chart-sub">Events per night · 12:30am–7:30am · 30-day rolling avg</div>
+      <div class="chart-area" id="chart-noc"></div>
+    </div>
+
+    <!-- Upside semi-deviation -->
+    <div class="chart-card">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:4px">
+        <div class="chart-title">Upside Semi-Deviation</div>
+        <div style="display:flex;gap:6px">
+          <button class="toggle-btn active" id="usd-btn-30" onclick="setUsdView('30')">Last 90d</button>
+          <button class="toggle-btn" id="usd-btn-all" onclick="setUsdView('all')">All time</button>
+        </div>
+      </div>
+      <div class="chart-sub">Bad-day volatility only · threshold = 10 voids/day · 30-day rolling</div>
+      <div class="chart-area" id="chart-usd"></div>
+    </div>
+
+    <!-- Hourly heatmap -->
+    <div class="chart-card">
+      <div class="chart-title">Void Heatmap — Hour × Weekday</div>
+      <div class="chart-sub">Mean voids per hour by day of week · full dataset</div>
+      <div class="chart-area" id="chart-heatmap"></div>
+    </div>
+
+    <!-- IVI distribution -->
+    <div class="chart-card">
+      <div class="chart-title">Inter-Void Interval Distribution</div>
+      <div class="chart-sub">Minutes between voids · last 30 days vs prior 30 days · capped at 480 min</div>
+      <div class="chart-area" id="chart-ivi"></div>
+    </div>
+
+    <!-- Void hourly profile comparison -->
+    <div class="chart-card">
+      <div class="chart-title">Void Profile — Current vs Prior 30 Days</div>
+      <div class="chart-sub">Mean voids per hour · shift shows intervention effect</div>
+      <div class="chart-area" id="chart-profile"></div>
+    </div>
+
+    <!-- Pre-sleep cascade -->
+    <div class="chart-card">
+      <div class="chart-title">Pre-Sleep Urgency Cascade</div>
+      <div class="chart-sub">Voids 9pm–12:30am by hour · 30-day rolling mean</div>
+      <div class="chart-area" id="chart-presleep"></div>
+    </div>
+
+  </div>
+
+  <!-- Intervention Scorecard -->
+  <div class="scorecard">
+    <div class="scorecard-title">Intervention Scorecard</div>
+    <div class="scorecard-sub">Baseline = 30 clean days before start · End/Now = scaled trailing window (7d &lt;30d, 14d &lt;60d, 21d &lt;90d, 30d 90d+) · travel excluded</div>
+    <table id="scorecard-table">
+      <thead>
+        <tr>
+          <th>Intervention</th>
+          <th>Type</th>
+          <th>Period</th>
+          <th>Days</th>
+          <th>BHS Baseline</th>
+          <th>BHS End / Now</th>
+          <th>ΔBHS (start→now)</th>
+          <th>True Noct. Baseline</th>
+          <th>True Noct. End/Now</th>
+          <th>Early AM Baseline</th>
+          <th>Early AM End/Now</th>
+          <th>Bad Day% Baseline</th>
+          <th>Bad Day% End/Now</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="scorecard-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Protocol Timeline -->
+  <div class="charts-grid-3">
+    <div class="chart-card">
+      <div class="chart-title">Protocol Timeline</div>
+      <div class="chart-sub">Current stack · upcoming experiments</div>
+      <div id="protocol-timeline"></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">Good / Bad Day Distribution</div>
+      <div class="chart-sub">% days ≤9 voids (good) vs ≥13 voids (bad) by month · where the improvement actually lives</div>
+      <div class="chart-area" id="chart-distribution"></div>
+    </div>
+
+    <!-- BHS Explainer -->
+    <div class="chart-card" id="bhs-explainer">
+      <div class="chart-title">How BHS is Calculated</div>
+      <div class="chart-sub">Bladder Health Score · absolute scale · 0–100</div>
+      <div style="margin-top:18px; display:flex; flex-direction:column; gap:18px;">
+
+        <!-- Formula overview -->
+        <div style="display:flex; align-items:center; gap:10px; font-size:12px;">
+          <div style="flex:1; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; padding:10px 12px; text-align:center;">
+            <div style="color:var(--muted); font-size:10px; margin-bottom:4px; letter-spacing:0.05em;">FREQUENCY</div>
+            <div style="color:var(--accent); font-size:18px; font-weight:600;">40%</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:4px;">voids / day</div>
+          </div>
+          <div style="color:var(--dim); font-size:18px;">+</div>
+          <div style="flex:1; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; padding:10px 12px; text-align:center;">
+            <div style="color:var(--muted); font-size:10px; margin-bottom:4px; letter-spacing:0.05em;">FLARE RATE</div>
+            <div style="color:var(--purple); font-size:18px; font-weight:600;">60%</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:4px;">urgency days</div>
+          </div>
+          <div style="color:var(--dim); font-size:18px;">=</div>
+          <div style="flex:1; background:var(--surface2); border:1px solid var(--border2); border-radius:8px; padding:10px 12px; text-align:center;">
+            <div style="color:var(--muted); font-size:10px; margin-bottom:4px; letter-spacing:0.05em;">BHS</div>
+            <div style="color:var(--green); font-size:18px; font-weight:600;">0–100</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:4px;">higher = better</div>
+          </div>
+        </div>
+
+        <!-- Frequency scale bar -->
+        <div>
+          <div style="display:flex; justify-content:space-between; color:var(--muted); font-size:10px; margin-bottom:5px; letter-spacing:0.04em;">
+            <span style="color:var(--accent);">FREQUENCY COMPONENT</span>
+            <span>30-day rolling avg</span>
+          </div>
+          <div style="position:relative; height:22px; border-radius:4px; overflow:hidden; background:linear-gradient(to right, var(--green), var(--yellow), var(--red));">
+            <div style="position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:space-between; padding:0 8px; font-size:9px; font-weight:600; color:rgba(0,0,0,0.7);">
+              <span>≤7 → 100pts</span>
+              <span>11 → 56pts</span>
+              <span>≥16 → 0pts</span>
+            </div>
+          </div>
+          <div style="color:var(--muted); font-size:10px; margin-top:5px;">Score = max(0, (16 − avg_voids) / 9 × 100)</div>
+        </div>
+
+        <!-- Flare rate scale bar -->
+        <div>
+          <div style="display:flex; justify-content:space-between; color:var(--muted); font-size:10px; margin-bottom:5px; letter-spacing:0.04em;">
+            <span style="color:var(--purple);">FLARE COMPONENT</span>
+            <span>compression ≥0.2 + ≥3 short intervals</span>
+          </div>
+          <div style="position:relative; height:22px; border-radius:4px; overflow:hidden; background:linear-gradient(to right, var(--green), var(--yellow), var(--red));">
+            <div style="position:absolute; top:0; left:0; right:0; bottom:0; display:flex; align-items:center; justify-content:space-between; padding:0 8px; font-size:9px; font-weight:600; color:rgba(0,0,0,0.7);">
+              <span>0% → 100pts</span>
+              <span>20% → 50pts</span>
+              <span>≥40% → 0pts</span>
+            </div>
+          </div>
+          <div style="color:var(--muted); font-size:10px; margin-top:5px;">Score = max(0, (1 − flare_rate% / 40) × 100) · fixed ceiling at 40% · A flare day = compression ≥20% AND ≥3 short intervals (&lt;30 min apart)</div>
+        </div>
+
+        <!-- Reference band -->
+        <div style="display:flex; gap:8px;">
+          <div style="flex:1; border-radius:6px; padding:8px 10px; background:rgba(86,212,138,0.08); border:1px solid rgba(86,212,138,0.2); text-align:center;">
+            <div style="color:var(--green); font-size:15px; font-weight:600;">90–100</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:2px;">healthy</div>
+          </div>
+          <div style="flex:1; border-radius:6px; padding:8px 10px; background:rgba(79,195,247,0.08); border:1px solid rgba(79,195,247,0.2); text-align:center;">
+            <div style="color:var(--accent); font-size:15px; font-weight:600;">70–89</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:2px;">well-managed</div>
+          </div>
+          <div style="flex:1; border-radius:6px; padding:8px 10px; background:rgba(245,200,66,0.08); border:1px solid rgba(245,200,66,0.2); text-align:center;">
+            <div style="color:var(--yellow); font-size:15px; font-weight:600;">50–69</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:2px;">symptomatic</div>
+          </div>
+          <div style="flex:1; border-radius:6px; padding:8px 10px; background:rgba(240,96,112,0.08); border:1px solid rgba(240,96,112,0.2); text-align:center;">
+            <div style="color:var(--red); font-size:15px; font-weight:600;">&lt;50</div>
+            <div style="color:var(--muted); font-size:10px; margin-top:2px;">flaring</div>
+          </div>
+        </div>
+
+        <div style="color:var(--dim); font-size:10px; border-top:1px solid var(--border); padding-top:10px; line-height:1.7;">
+          Population normal = 7 voids/day, 0% flare days → BHS 100.<br>
+          Excluded (travel) days are skipped from all rolling windows.
+        </div>
+
+      </div>
+    </div>
+</div>
+
+<!-- Version footnote -->
+<div style="text-align:center; color:var(--dim); font-size:10px; font-family:var(--font-mono); padding:16px 0 24px; letter-spacing:0.06em;" id="dashboard-version"></div>
+
+<script>
+// ─── VERSION ──────────────────────────────────────────────────────
+const APP_VERSION = "v1.2.2";
+
+// ─── CONFIG ───────────────────────────────────────────────────────
+const TZ_OFFSET_H = -5; // EST default; ideally detect from data
+const NOC_START = 0.5;  // 12:30am
+const NOC_END   = 7.5;
+const NOC_TRUE_END   = 6.0;  // 6:00am — true nocturia cutoff
+const NOC_EARLY_START = 6.0; // 6:00am
+const NOC_EARLY_END   = 7.5; // 7:30am
+const PRESLEEP_START = 21.0;
+const BAD_DAY_THRESH  = 13;
+const GOOD_DAY_THRESH = 9;
+const UPSIDE_THRESH   = 10;
+const ROLL_BHS  = 30;
+const ROLL_NOC  = 30;
+const ROLL_USD  = 30;
+const ROLL_BAD  = 30;
+
+const INTERVENTIONS = [
+  {label:'Sample intervention A', start:'2024-11-25',end:'2025-09-19',color:'#7b68ee',type:'supp'},
+  {label:'Sample intervention B', start:'2025-06-15',end:'2025-09-13',color:'#e74c3c',type:'med'},
+  {label:'Sample intervention C', start:'2025-09-14',end:'2026-01-27',color:'#2ecc71',type:'med'},
+  {label:'Sample intervention D', start:'2026-01-28',end:'2026-03-13',color:'#2ecc71',type:'med'},
+  {label:'Sample intervention E', start:'2024-04-28',end:'2026-01-17',color:'#f39c12',type:'supp'},
+  {label:'Sample intervention F', start:'2026-02-06',end:'2026-06-01',color:'#1abc9c',type:'procedure'},
+  {label:'Sample intervention G', start:'2025-11-03',end:'2026-01-17',color:'#9b59b6',type:'supp'},
+  {label:'Sample intervention H', start:'2026-03-14',end:'2026-04-16',color:'#4fc3f7',type:'med'},
+  {label:'Sample intervention I', start:'2026-04-16',end:'2026-05-08',color:'#27ae60',type:'supp'},
+  {label:'Sample intervention J', start:'2026-05-09',end:'2026-05-27',color:'#27ae60',type:'supp'},
+  {label:'Sample intervention K', start:'2026-05-27',end:null,        color:'#4fc3f7',type:'med'},
+];
+
+const UPCOMING = [
+  {label:'Planned intervention A', start:'2026-05-16',color:'#81c784'},
+  {label:'Planned intervention B', start:'2026-06-01',color:'#ffb74d'},
+  {label:'Planned intervention C', start:'2026-08-01',color:'#9b59b6'},
+  {label:'Planned intervention D', start:'2026-10-01',color:'#ce93d8'},  
+  {label:'Planned intervention E', start:'2026-12-01',color:'#f06292'},
+];
+
+// Arrival/departure days — fully excluded from all calculations.
+// Data is unreliable during transit (recordings span two timezones).
+const EXCLUDED_RANGES = [
+  ['2025-04-17','2025-04-17'],  // Excluded transfer day 1
+  ['2025-10-15','2025-10-15'],  // Excluded transfer day 2
+  ['2025-10-20','2025-10-20'],  // Excluded transfer day 3
+  ['2026-04-06','2026-04-06'],  // Excluded transfer day 4
+];
+
+// Interior travel days — included in all calculations, but void times are
+// re-interpreted in the destination timezone instead of America/New_York.
+// The 4am logical-day boundary is also applied in local destination time.
+//
+// Timezone identifiers use the IANA Time Zone Database (DST-aware):
+//   https://www.iana.org/time-zones
+// Common zones:
+//   America/New_York · America/Los_Angeles · America/Chicago · America/Denver
+//   Europe/London · Europe/Lisbon · Europe/Madrid · Europe/Paris · Europe/Berlin
+//   Asia/Tokyo · Asia/Singapore · Australia/Sydney
+// Validate in browser console:
+//   new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid' }).format(new Date())
+//   // → throws RangeError immediately if the string is wrong
+const TZ_ADJUSTED_RANGES = [
+  { name: 'Sample TZ window A', start: '2025-04-09', end: '2025-04-16', timezone: 'Europe/Lisbon'       },
+  { name: 'Sample TZ window B', start: '2025-10-16', end: '2025-10-19', timezone: 'America/Los_Angeles'  },
+  { name: 'Sample TZ window C', start: '2026-03-26', end: '2026-04-05', timezone: 'Europe/Madrid'        },
+];
+
+// Validate all timezone strings at startup.
+// Throws a RangeError immediately if any entry has a fat-fingered timezone name.
+TZ_ADJUSTED_RANGES.forEach(r => {
+  try { new Intl.DateTimeFormat('en-US', { timeZone: r.timezone }).format(new Date()); }
+  catch(e) { throw new RangeError(`TZ_ADJUSTED_RANGES: invalid timezone "${r.timezone}" for "${r.name}" — ${e.message}`); }
+});
+
+const C = {
+  bg:'#080b10', surface:'#0e1320', surface2:'#141929',
+  border:'#1e2535', border2:'#252d40',
+  text:'#e2e8f5', muted:'#5a6480', dim:'#3a4260',
+  accent:'#4fc3f7', green:'#56d48a', yellow:'#f5c842',
+  red:'#f06070', purple:'#9d7fe8', orange:'#f5934a', teal:'#3ecfb8'
+};
+
+// ─── TOOLTIP ──────────────────────────────────────────────────────
+const ttEl = document.getElementById('tt');
+
+function showTooltip(evt, html) {
+  ttEl.innerHTML = html;
+  ttEl.classList.add('visible');
+  positionTooltip(evt);
+}
+function hideTooltip() {
+  ttEl.classList.remove('visible');
+}
+function positionTooltip(evt) {
+  const pad = 14;
+  const tw = ttEl.offsetWidth, th = ttEl.offsetHeight;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let x = evt.clientX + pad, y = evt.clientY - th / 2;
+  if (x + tw > vw - pad) x = evt.clientX - tw - pad;
+  if (y < pad) y = pad;
+  if (y + th > vh - pad) y = vh - th - pad;
+  ttEl.style.left = x + 'px';
+  ttEl.style.top  = y + 'px';
+}
+document.addEventListener('mousemove', e => { if(ttEl.classList.contains('visible')) positionTooltip(e); });
+
+function fmtDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric', year:'numeric'});
+}
+function nocClass(n) { return n === 0 ? 'good' : n === 1 ? 'warn' : 'bad'; }
+function voidClass(n) { return n <= 9 ? 'good' : n >= 13 ? 'bad' : 'accent'; }
+function bhsClass(n)  { return n >= 90 ? 'good' : n >= 70 ? 'accent' : n >= 50 ? 'warn' : 'bad'; }
+
+// Build lookup set for excluded (arrival/departure) days — O(1) membership check.
+const EXCLUDED_SET = new Set();
+EXCLUDED_RANGES.forEach(([s,e]) => {
+  const sd = new Date(s), ed = new Date(e);
+  for(let d = new Date(sd); d <= ed; d.setDate(d.getDate()+1))
+    EXCLUDED_SET.add(d.toISOString().slice(0,10));
+});
+
+// Build lookup map for tz-adjusted (interior travel) days: date string → range object.
+// Uses noon anchor when iterating to avoid any DST/local-offset ambiguity.
+const TZ_ADJUSTED_MAP = new Map();
+TZ_ADJUSTED_RANGES.forEach(r => {
+  const sd = new Date(r.start + 'T12:00:00');
+  const ed = new Date(r.end   + 'T12:00:00');
+  for(let d = new Date(sd); d <= ed; d.setDate(d.getDate()+1)) {
+    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    TZ_ADJUSTED_MAP.set(key, r);
+  }
+});
+
+// Returns a label string if the date is an excluded (arrival/departure) day, else null.
+// Derives the trip name from the adjacent TZ_ADJUSTED_RANGES entry.
+function exclLabel(dateStr) {
+  if(!EXCLUDED_SET.has(dateStr)) return null;
+  for(const r of TZ_ADJUSTED_RANGES) {
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    const arrival   = new Date(r.start + 'T12:00:00'); arrival.setDate(arrival.getDate() - 1);
+    const departure = new Date(r.end   + 'T12:00:00'); departure.setDate(departure.getDate() + 1);
+    if(dateStr === fmt(arrival))   return `${r.name} (transit)`;
+    if(dateStr === fmt(departure)) return `${r.name} (transit)`;
+  }
+  return 'excluded';
+}
+
+// Returns "Name (IANA/Zone)" if the date is a tz-adjusted interior travel day, else null.
+function tzAdjLabel(dateStr) {
+  const r = TZ_ADJUSTED_MAP.get(dateStr);
+  return r ? `${r.name} (${r.timezone})` : null;
+}
+
+// ─── DATA PROCESSING ──────────────────────────────────────────────
+let STATE = { raw:[], daily:[], df:[] };
+
+function parseCSV(text) {
+  const result = Papa.parse(text, {header:true, skipEmptyLines:true, dynamicTyping:false});
+  return result.data;
+}
+
+function parseDate(str) {
+  // handles "2024-07-19 08:13:09-04:00" format
+  return new Date(str);
+}
+
+function toLocalHour(dt) {
+  // Get local hour in Eastern time from the stored offset
+  const h = dt.getHours() + dt.getTimezoneOffset()/60 + TZ_OFFSET_H;
+  return ((h % 24) + 24) % 24;
+}
+
+// Day boundary: 4am ET. Voids from 0:00–3:59am ET belong to the *previous* calendar date.
+// This keeps a full night's sleep (midnight–8am) within one logical day.
+// IMPORTANT: We convert to ET *first*, then check the hour — never subtract hours
+// in UTC before converting, as that gives wrong dates on DST transition days.
+const DAY_BOUNDARY_HOUR = 4;
+
+// Convert a UTC Date to local time in the given IANA timezone, then apply the
+// 4am logical-day boundary. Returns { date, hour, minute, hourFrac }.
+function toTimezone(utcDate, tz) {
+  const local = new Date(utcDate.toLocaleString('en-US', { timeZone: tz }));
+  const h   = local.getHours();
+  const m   = local.getMinutes();
+  const yr  = local.getFullYear();
+  const mo  = String(local.getMonth()+1).padStart(2,'0');
+  const day = String(local.getDate()).padStart(2,'0');
+  const calDate = `${yr}-${mo}-${day}`;
+
+  let logicalDate;
+  if(h < DAY_BOUNDARY_HOUR) {
+    // Void before 4am belongs to the previous logical day. Noon anchor avoids DST ambiguity.
+    const d = new Date(`${calDate}T12:00:00`);
+    d.setDate(d.getDate() - 1);
+    logicalDate = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  } else {
+    logicalDate = calDate;
+  }
+
+  return { date: logicalDate, hour: h, minute: m, hourFrac: h + m/60 };
+}
+
+function toEastern(utcDate) {
+  return toTimezone(utcDate, 'America/New_York');
+}
+
+// Get today's calendar date in ET with NO 4am adjustment.
+// Used for the "exclude today" cutoff only — so that the previous logical
+// day's nearly-complete data is visible when it's before 4am ET (e.g. the
+// user is in a different timezone where their local day has already ended).
+function getCalendarDateET() {
+  const now = new Date();
+  const eastern = new Date(now.toLocaleString('en-US', {timeZone:'America/New_York'}));
+  const yr = eastern.getFullYear();
+  const mo = String(eastern.getMonth()+1).padStart(2,'0');
+  const day = String(eastern.getDate()).padStart(2,'0');
+  return `${yr}-${mo}-${day}`;
+}
+
+// Get today's logical date in ET with 4am boundary.
+// If it's before 4am ET right now, "today" is still yesterday logically.
+function getTodayLogical() {
+  const now = new Date();
+  const eastern = new Date(now.toLocaleString('en-US', {timeZone:'America/New_York'}));
+  const h = eastern.getHours();
+  const yr = eastern.getFullYear();
+  const mo = String(eastern.getMonth()+1).padStart(2,'0');
+  const day = String(eastern.getDate()).padStart(2,'0');
+  const calDate = `${yr}-${mo}-${day}`;
+  if(h < DAY_BOUNDARY_HOUR) {
+    const d = new Date(`${calDate}T12:00:00`);
+    d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  return calDate;
+}
+
+function processRaw(rows) {
+  const excluded = new Set();
+  EXCLUDED_RANGES.forEach(([s,e]) => {
+    const sd = new Date(s), ed = new Date(e);
+    for(let d = new Date(sd); d <= ed; d.setDate(d.getDate()+1)) {
+      excluded.add(d.toISOString().slice(0,10));
+    }
+  });
+
+  let voids = rows.map(r => {
+    // Support both old format (startDate with offset) and new format (UTC Z timestamp)
+    const rawStr = (r['Pee Date and Time'] || r['startDate'] || '').trim();
+    if(!rawStr) return null;
+
+    let dt;
+    if(rawStr.endsWith('Z') || rawStr.includes('T')) {
+      // New format: UTC ISO  e.g. "2024-07-19T12:13:09Z"
+      dt = new Date(rawStr);
+    } else {
+      // Old format: "2024-07-19 08:13:09-04:00" — already local time with offset
+      dt = new Date(rawStr);
+    }
+    if(isNaN(dt.getTime())) return null;
+
+    let date, hour, minute, hourFrac;
+
+    if(rawStr.endsWith('Z') || (rawStr.includes('T') && !rawStr.match(/[+-]\d{2}:\d{2}$/))) {
+      // UTC timestamp — convert to Eastern first to get the approximate date,
+      // then check if that date falls in a tz-adjusted travel window and redo
+      // the conversion in the destination timezone if so.
+      const eastApprox = toEastern(dt);
+      const tzAdj = TZ_ADJUSTED_MAP.get(eastApprox.date);
+      const local = tzAdj ? toTimezone(dt, tzAdj.timezone) : eastApprox;
+      date = local.date; hour = local.hour; minute = local.minute; hourFrac = local.hourFrac;
+    } else {
+      // Has embedded offset — the string already encodes local time + offset.
+      // Parse it, extract local hours/minutes, then apply 4am boundary.
+      const localStr = rawStr.replace('T',' ');
+      const calDate = localStr.slice(0,10);
+      hour     = parseInt(localStr.slice(11,13)||'0');
+      minute   = parseInt(localStr.slice(14,16)||'0');
+      hourFrac = hour + minute/60;
+      // Apply 4am boundary: if local hour < 4, roll date back by 1 day
+      if(hour < DAY_BOUNDARY_HOUR) {
+        const d = new Date(`${calDate}T12:00:00`);
+        d.setDate(d.getDate() - 1);
+        date = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+      } else {
+        date = calDate;
+      }
+    }
+
+    return { dt, date, hour, minute, hourFrac, ts: dt.getTime() };
+  }).filter(Boolean);
+
+  voids = voids.filter(v => !excluded.has(v.date));
+  voids.sort((a,b) => a.ts - b.ts);
+
+  // Inter-void intervals
+  for(let i=1; i<voids.length; i++) {
+    const mins = (voids[i].ts - voids[i-1].ts) / 60000;
+    voids[i].ivi = Math.min(mins, 480);
+  }
+
+  return voids;
+}
+
+function buildDaily(voids, cutoffDate) {
+  // Group by date
+  const byDate = {};
+  voids.forEach(v => {
+    if(!byDate[v.date]) byDate[v.date] = [];
+    byDate[v.date].push(v);
+  });
+
+  // Build excluded set for visual greying
+  const excludedSet = new Set();
+  EXCLUDED_RANGES.forEach(([s,e]) => {
+    const sd = new Date(s), ed = new Date(e);
+    for(let d = new Date(sd); d <= ed; d.setDate(d.getDate()+1)) {
+      excludedSet.add(d.toISOString().slice(0,10));
+    }
+  });
+
+  const dates = Object.keys(byDate).sort();
+  const daily = dates.map(date => {
+    const dvoids = byDate[date];
+    const count = dvoids.length;
+
+    // Nocturia — three windows
+    const noc      = dvoids.filter(v => v.hourFrac >= NOC_START && v.hourFrac < NOC_END).length;
+    const nocTrue  = dvoids.filter(v => v.hourFrac >= NOC_START && v.hourFrac < NOC_TRUE_END).length;
+    const nocEarly = dvoids.filter(v => v.hourFrac >= NOC_EARLY_START && v.hourFrac < NOC_EARLY_END).length;
+
+    // Pre-sleep
+    const presleep = dvoids.filter(v => v.hourFrac >= PRESLEEP_START || v.hourFrac < NOC_START).length;
+
+    // Compression = short_intervals / total_intervals
+    // Short = consecutive void pair < 30 minutes apart
+    // Flare day = compression ≥ 0.2 AND at least 3 short intervals
+    // Sort within day by ts to ensure correct order; guard span>0 for duplicate timestamps
+    const sortedDvoids = dvoids.slice().sort((a,b) => a.ts - b.ts);
+    let shortIntervals = 0;
+    const totalIntervals = sortedDvoids.length - 1;
+    for(let i=0; i < totalIntervals; i++) {
+      const span = (sortedDvoids[i+1].ts - sortedDvoids[i].ts) / 60000;
+      if(span > 0 && span < 30) shortIntervals++;
+    }
+    const compression = totalIntervals > 0 ? shortIntervals / totalIntervals : 0;
+    const isFlare = compression >= 0.2 && shortIntervals >= 3;
+
+    return { date, count, noc, nocTrue, nocEarly, presleep, compression, isFlare,
+             isBad: count >= BAD_DAY_THRESH, isGood: count <= GOOD_DAY_THRESH };
+  });
+
+  // Exclude today — incomplete day skews flare/count/BHS metrics.
+  // cutoffDate is injected by render(): when reloading from storage it is set
+  // to the original load date so the score stays stable across calendar days.
+  // When a new file is loaded cutoffDate is undefined and we fall back to
+  // real today (normal behaviour).
+  const todayET = cutoffDate || getCalendarDateET();
+  const dailyComplete = daily.filter(d => d.date < todayET);
+
+  // Fill date gaps
+  const filled = [];
+  const completeDates = dailyComplete.map(d => d.date).sort();
+  if(!completeDates.length) return [];
+  const startStr = completeDates[0];
+  const endStr   = completeDates[completeDates.length-1];
+  const dailyMap = {};
+  dailyComplete.forEach(d => dailyMap[d.date] = d);
+  // Use noon anchor (T12:00:00) so setDate(getDate()+1) steps through local
+  // calendar days correctly. UTC-midnight anchors produce wrong results in
+  // positive-offset timezones (UTC+N): the last date is silently skipped
+  // because the UTC midnight falls behind the local date, causing the loop's
+  // d <= end comparison to terminate one day early.
+  for(let d = new Date(startStr + 'T12:00:00'); ; d.setDate(d.getDate()+1)) {
+    const yr  = d.getFullYear();
+    const mo  = String(d.getMonth()+1).padStart(2,'0');
+    const day = String(d.getDate()).padStart(2,'0');
+    const ds  = `${yr}-${mo}-${day}`;
+    if(ds > endStr) break;
+    filled.push(dailyMap[ds] || {
+      date:ds, count:null, noc:null, nocTrue:null, nocEarly:null, presleep:null,
+      compression:null, isFlare:null, isBad:null, isGood:null
+    });
+  }
+
+  // Rolling metrics
+  const n = filled.length;
+  const counts = filled.map(d => d.count);
+
+  // Rolling helpers — skip excluded days so they don't dilute windows
+  function rollingMean(field, w, min_p) {
+    return filled.map((_,i) => {
+      const vals = [];
+      for(let j = i; j >= 0 && vals.length < w; j--) {
+        if(excludedSet.has(filled[j].date)) continue;
+        const v = (typeof field === 'string') ? filled[j][field] : field[j];
+        if(v !== null && v !== undefined && !isNaN(v)) vals.push(v);
+      }
+      return vals.length >= min_p ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+    });
+  }
+
+  function rollingRate(field, w, min_p) {
+    return filled.map((_,i) => {
+      const vals = [];
+      for(let j = i; j >= 0 && vals.length < w; j--) {
+        if(excludedSet.has(filled[j].date)) continue;
+        const v = (typeof field === 'string') ? filled[j][field] : field[j];
+        if(v === null || v === undefined) continue;  // skip gap days
+        vals.push(!!v);
+      }
+      return vals.length >= min_p ? vals.filter(Boolean).length/vals.length*100 : null;
+    });
+  }
+
+  const rollFreq  = rollingMean('count', ROLL_BHS, 30);
+  const rollFlare = rollingRate('isFlare', ROLL_BHS, 30);
+
+  // BHS score — absolute anchors (population normal = 100)
+  // Frequency: 100 at ≤7 voids/day, 0 at ≥16 voids/day
+  // Flare rate: 100 at 0%, 0 at ≥40% (historical max)
+  // Weights: 40% frequency, 60% flare rate
+  const BHS_VOID_TARGET = 7;
+  const BHS_VOID_FLOOR  = 16;
+  const bhs = rollFreq.map((f,i) => {
+    if(f===null || rollFlare[i]===null) return null;
+    const freqScore  = Math.max(0, Math.min(100, (BHS_VOID_FLOOR - f) / (BHS_VOID_FLOOR - BHS_VOID_TARGET) * 100));
+    const flareScore = Math.max(0, (1 - rollFlare[i] / 40) * 100);
+    return 0.40 * freqScore + 0.60 * flareScore;
+  });
+
+  // Upside semi-deviation
+  function upsideSD(arr, target) {
+    const above = arr.filter(x=>x!==null && x>target).map(x=>x-target);
+    if(!arr.filter(x=>x!==null).length) return null;
+    return Math.sqrt(above.map(x=>x*x).reduce((a,b)=>a+b,0) / arr.filter(x=>x!==null).length);
+  }
+
+  const usd = filled.map((_,i) => {
+    const window = [];
+    for(let j = i; j >= 0 && window.length < ROLL_USD; j--) {
+      if(excludedSet.has(filled[j].date)) continue;
+      if(filled[j].count !== null) window.push(filled[j].count);
+    }
+    return window.length >= 30 ? upsideSD(window, UPSIDE_THRESH) : null;
+  });
+
+  const nocR30      = rollingMean('noc',      ROLL_NOC, 7);
+  const nocTrueR30  = rollingMean('nocTrue',  ROLL_NOC, 7);
+  const nocEarlyR30 = rollingMean('nocEarly', ROLL_NOC, 7);
+  const badR30 = rollingRate('isBad',   ROLL_BAD, 30);
+  const flareR30 = rollingRate('isFlare', ROLL_BAD, 30);
+
+  filled.forEach((d,i) => {
+    d.bhs       = bhs[i];
+    d.rollFreq  = rollFreq[i];
+    d.rollFlare = rollFlare[i];
+    d.usd       = usd[i];
+    d.nocR30     = nocR30[i];
+    d.nocTrueR30 = nocTrueR30[i];
+    d.nocEarlyR30= nocEarlyR30[i];
+    d.badR30    = badR30[i];
+    d.flareR30  = flareR30[i];
+    d.isTravel  = excludedSet.has(d.date);
+    d.isTzAdj   = TZ_ADJUSTED_MAP.has(d.date);
+  });
+
+  return filled;
+}
+
+// ─── HEADLINE METRICS ─────────────────────────────────────────────
+function renderMetrics(daily) {
+  const last = [...daily].reverse().find(d => d.bhs !== null);
+
+  // Build exclusion-aware windows: walk back from most recent date collecting
+  // only non-excluded days with data. curr = last 30 clean days, prev = 30 before that.
+  const cleanDays = [...daily].reverse().filter(d => !EXCLUDED_SET.has(d.date) && d.count !== null);
+  const curr30 = cleanDays.slice(0, 30);
+  const prev30 = cleanDays.slice(30, 60);
+
+  // 7-day trend: slices of cleanDays, minimum 5 days each
+  const curr7  = cleanDays.slice(0, 7);
+  const prior7 = cleanDays.slice(7, 14);
+
+  function compute7dBHS(days) {
+    if (days.length < 5) return null;
+    const meanVoids  = days.reduce((a, b) => a + b.count, 0) / days.length;
+    const flareRate  = days.filter(d => d.isFlare).length / days.length * 100;
+    const freqScore  = Math.max(0, Math.min(100, (16 - meanVoids) / 9 * 100));
+    const flareScore = Math.max(0, Math.min(100, (1 - flareRate / 40) * 100));
+    return 0.4 * freqScore + 0.6 * flareScore;
+  }
+
+  const bhs7d      = compute7dBHS(curr7);
+  const bhsPrior7d = compute7dBHS(prior7);
+  const delta7d    = (bhs7d !== null && bhsPrior7d !== null) ? bhs7d - bhsPrior7d : null;
+  const arrow7d    = delta7d === null ? '' : delta7d > 3 ? '↑' : delta7d < -3 ? '↓' : '→';
+
+  // Status: Green / Yellow / Red per spec table
+  let trend7dColor;
+  if (bhs7d === null) {
+    trend7dColor = C.muted;
+  } else if (bhs7d >= 70) {
+    trend7dColor = (delta7d !== null && delta7d < -5) ? C.yellow : C.green;
+  } else if (bhs7d >= 50) {
+    trend7dColor = (delta7d !== null && delta7d < -5) ? C.red : C.yellow;
+  } else {
+    trend7dColor = C.red;
+  }
+
+  // Natural-language phrase keyed on status + arrow
+  const TREND_PHRASES = {
+    green:  { up:'Improving',  flat:'Stable',    down:'Holding'   },
+    yellow: { up:'Recovering', flat:'Watch',      down:'Slipping'  },
+    red:    { up:'Recovering', flat:'Struggling', down:'Worsening' },
+  };
+  const statusKey = trend7dColor === C.green ? 'green' : trend7dColor === C.yellow ? 'yellow' : 'red';
+  const arrowKey  = arrow7d === '↑' ? 'up' : arrow7d === '↓' ? 'down' : 'flat';
+  const trendPhrase = bhs7d !== null ? TREND_PHRASES[statusKey][arrowKey] : null;
+  const trendRgb    = trend7dColor === C.green ? '86,212,138' : trend7dColor === C.yellow ? '245,200,66' : '240,96,112';
+  const trendSub    = bhsPrior7d !== null
+    ? `vs ${bhsPrior7d.toFixed(1)} prior week · ${delta7d >= 0 ? '+' : ''}${delta7d.toFixed(1)} pts`
+    : 'prior week unavailable';
+
+  // Render banner
+  const banner = document.getElementById('trend-banner');
+  if (bhs7d === null) {
+    banner.style.display = 'none';
+  } else {
+    banner.style.cssText = `--trend-color:${trend7dColor};--trend-rgb:${trendRgb}`;
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;flex-shrink:0;padding-top:1px">
+        <span class="trend-score">${bhs7d.toFixed(1)}</span>
+        <span class="trend-arrow">${arrow7d}</span>
+      </div>
+      <div class="trend-divider"></div>
+      <div class="trend-text">
+        <div class="trend-phrase">${trendPhrase}</div>
+        <div class="trend-sub">${trendSub}</div>
+      </div>
+    `;
+  }
+
+  const bhsNow  = last?.bhs?.toFixed(1) ?? '—';
+  const bhsPrev30 = prev30.filter(d=>d.bhs!==null);
+  const bhsPrevVal = bhsPrev30.length ? bhsPrev30.reduce((a,b)=>a+b.bhs,0)/bhsPrev30.length : null;
+  const bhsDelta = bhsPrevVal != null && last?.bhs != null ? last.bhs - bhsPrevVal : null;
+
+  const nocNow  = last?.nocTrueR30?.toFixed(2) ?? '—';
+  const nocPrevValid = prev30.filter(d=>d.nocTrueR30!==null);
+  const nocPrevVal = nocPrevValid.length ? nocPrevValid.reduce((a,b)=>a+b.nocTrueR30,0)/nocPrevValid.length : null;
+  const nocDelta = nocPrevVal != null && last?.nocTrueR30 != null ? last.nocTrueR30 - nocPrevVal : null;
+
+  const usdNow  = last?.usd?.toFixed(2) ?? '—';
+  const usdPrevValid = prev30.filter(d=>d.usd!==null);
+  const usdPrevVal = usdPrevValid.length ? usdPrevValid.reduce((a,b)=>a+b.usd,0)/usdPrevValid.length : null;
+  const usdDelta = usdPrevVal != null && last?.usd != null ? last.usd - usdPrevVal : null;
+
+  const badNow  = last?.badR30?.toFixed(1) ?? '—';
+  const badPrevValid = prev30.filter(d=>d.badR30!==null);
+  const badPrevVal = badPrevValid.length ? badPrevValid.reduce((a,b)=>a+b.badR30,0)/badPrevValid.length : null;
+  const badDelta = badPrevVal != null && last?.badR30 != null ? last.badR30 - badPrevVal : null;
+
+  const flareNow= last?.flareR30?.toFixed(1) ?? '—';
+  const flarePrevValid = prev30.filter(d=>d.flareR30!==null);
+  const flarePrevVal = flarePrevValid.length ? flarePrevValid.reduce((a,b)=>a+b.flareR30,0)/flarePrevValid.length : null;
+  const flareDelta = flarePrevVal != null && last?.flareR30 != null ? last.flareR30 - flarePrevVal : null;
+
+  const voidsMean30 = curr30.length ? curr30.reduce((a,b)=>a+b.count,0)/curr30.length : 0;
+  const voidsMean30Prev = prev30.filter(d=>d.count!==null).length ?
+    prev30.filter(d=>d.count!==null).reduce((a,b)=>a+b.count,0)/prev30.filter(d=>d.count!==null).length : 0;
+  const voidsDelta = voidsMean30 - voidsMean30Prev;
+
+  // Colors
+  const bhsColor   = last?.bhs >= 90 ? C.green : last?.bhs >= 70 ? C.accent : last?.bhs >= 50 ? C.yellow : C.red;
+  const nocColor   = last?.nocTrueR30 <= 0.3 ? C.green : last?.nocTrueR30 <= 0.7 ? C.yellow : C.red;
+  const usdColor   = last?.usd <= 1.5 ? C.green : last?.usd <= 2.5 ? C.yellow : C.red;
+  const badColor   = last?.badR30 <= 5 ? C.green : last?.badR30 <= 15 ? C.yellow : C.red;
+  const flareColor = last?.flareR30 <= 5 ? C.green : last?.flareR30 <= 15 ? C.yellow : C.red;
+  const voidsColor = voidsMean30 <= 9 ? C.green : voidsMean30 >= 13 ? C.red : C.yellow;
+
+  const deltaHtml = (v, good='up', decimals=1) => {
+    if(v===null || v===undefined || isNaN(v)) return '<div class="metric-delta delta-flat">— vs prev 30d</div>';
+    const cls = (good==='up'&&v>0.5)||(good==='down'&&v<-0.5) ? 'delta-up' :
+                (good==='up'&&v<-0.5)||(good==='down'&&v>0.5) ? 'delta-down' : 'delta-flat';
+    const sign = v>0?'+':'';
+    return `<div class="metric-delta ${cls}">${sign}${v.toFixed(decimals)} vs prev 30d</div>`;
+  };
+
+  const metrics = [
+    { label:'BHS Score',      value: bhsNow,    unit:'/ 100', sub:'30-day rolling',        color: bhsColor,   delta: deltaHtml(bhsDelta,   'up') },
+    { label:'Voids / Day',    value: voidsMean30.toFixed(1), unit:'/day', sub:'30-day mean', color: voidsColor, delta: deltaHtml(voidsDelta,  'down') },
+    { label:'True Nocturia',    value: nocNow,    unit:'/night', sub:'12:30am–6am · 30-day avg',      color: nocColor,   delta: deltaHtml(nocDelta,   'down', 2) },
+    { label:'Upside Semi-Dev',value: usdNow,    unit:'',       sub:'above 10 voids · 30d',  color: usdColor,   delta: deltaHtml(usdDelta,   'down', 2) },
+    { label:'Bad Day Rate',   value: badNow,    unit:'%',      sub:'≥13 voids · 30-day',    color: badColor,   delta: deltaHtml(badDelta,   'down') },
+    { label:'Flare Rate',     value: flareNow,  unit:'%',      sub:'≥0.2 compress + ≥3 short · 30d',color: flareColor, delta: deltaHtml(flareDelta, 'down') },
+  ];
+
+  const grid = document.getElementById('metrics-grid');
+  grid.innerHTML = metrics.map(m => `
+    <div class="metric-card" style="--accent-color:${m.color}">
+      <div class="metric-label">${m.label}</div>
+      <div class="metric-value">${m.value}<span class="metric-unit">${m.unit}</span></div>
+      <div class="metric-sub">${m.sub}</div>
+      ${m.delta}
+    </div>
+  `).join('');
+}
+
+// ─── CHART HELPERS ────────────────────────────────────────────────
+function svgContainer(id, h=220) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  const W = el.getBoundingClientRect().width || el.clientWidth || el.offsetWidth || 600;
+  // Reduce height on narrow screens
+  const mobileH = W < 400 ? Math.round(h * 0.75) : W < 550 ? Math.round(h * 0.85) : h;
+  const svg = d3.select(el).append('svg').attr('width','100%').attr('height', mobileH);
+  return {svg, W, H: mobileH};
+}
+
+function addEventLines(svg, xScale, H, margin, events) {
+  events.forEach(ev => {
+    const x = xScale(new Date(ev.start));
+    if(x < margin.left || x > H) return;
+    svg.append('line')
+      .attr('x1',x).attr('x2',x).attr('y1',margin.top).attr('y2',H-margin.bottom)
+      .attr('stroke',ev.color).attr('stroke-width',1).attr('stroke-dasharray','3,3').attr('opacity',0.5);
+    svg.append('text')
+      .attr('x',x-3).attr('y',margin.top+6)
+      .attr('fill',ev.color).attr('font-size',8).attr('font-family','DM Mono,monospace')
+      .attr('text-anchor','end').attr('transform',`rotate(-90,${x-3},${margin.top+6})`)
+      .text(ev.label.split(' ')[0]);
+  });
+}
+
+function addTravelBands(g, daily, xScale, h) {
+  // Group consecutive travel days into ranges and draw grey bands
+  let inTravel = false, tStart = null;
+  daily.forEach((d, i) => {
+    if(d.isTravel && !inTravel) {
+      inTravel = true; tStart = d.date;
+    } else if(!d.isTravel && inTravel) {
+      inTravel = false;
+      const x1 = xScale(new Date(tStart));
+      const x2 = xScale(new Date(daily[i-1].date));
+      g.append('rect').attr('x',x1).attr('y',0)
+       .attr('width', Math.max(1, x2-x1))
+       .attr('height', h)
+       .attr('fill','#ffffff').attr('opacity',0.04).attr('pointer-events','none');
+      // Hatching effect via thin lines
+      g.append('rect').attr('x',x1).attr('y',0)
+       .attr('width', Math.max(1, x2-x1))
+       .attr('height', h)
+       .attr('fill','none')
+       .attr('stroke','#ffffff').attr('stroke-width',0.5).attr('opacity',0.08)
+       .attr('stroke-dasharray','2,4').attr('pointer-events','none');
+      g.append('text').attr('x',(x1+x2)/2).attr('y',h-4)
+       .attr('fill','#ffffff').attr('opacity',0.2).attr('font-size',7)
+       .attr('font-family','DM Mono,monospace').attr('text-anchor','middle')
+       .text('travel');
+    }
+  });
+  if(inTravel) {
+    const x1 = xScale(new Date(tStart));
+    const x2 = xScale(new Date(daily[daily.length-1].date));
+    g.append('rect').attr('x',x1).attr('y',0).attr('width',Math.max(1,x2-x1))
+     .attr('height',h).attr('fill','#ffffff').attr('opacity',0.04);
+  }
+}
+
+function addTravelShading(g, xScale, h, margin) {
+  // Excluded (arrival/departure) days — yellow, no label (too narrow)
+  EXCLUDED_RANGES.forEach(([s, e]) => {
+    const endDate = new Date(e); endDate.setDate(endDate.getDate() + 1);
+    const x1 = xScale(new Date(s)), x2 = xScale(endDate);
+    if(x2 < 0 || x1 > xScale.range()[1]) return;
+    const cx1 = Math.max(0, x1), cx2 = Math.min(xScale.range()[1], x2);
+    if(cx2 <= cx1) return;
+    const col = '#f5c842';
+    g.append('rect').attr('x',cx1).attr('y',0).attr('width',cx2-cx1).attr('height',h)
+     .attr('fill',col).attr('opacity',0.08).attr('pointer-events','none');
+    g.append('rect').attr('x',cx1).attr('y',0).attr('width',cx2-cx1).attr('height',h)
+     .attr('fill','none').attr('stroke',col).attr('stroke-width',0.5).attr('opacity',0.3)
+     .attr('stroke-dasharray','2,2').attr('pointer-events','none');
+  });
+
+  // Timezone-adjusted (interior travel) days — cyan, labeled with trip name
+  TZ_ADJUSTED_RANGES.forEach(r => {
+    const endDate = new Date(r.end + 'T12:00:00'); endDate.setDate(endDate.getDate() + 1);
+    const x1 = xScale(new Date(r.start)), x2 = xScale(endDate);
+    if(x2 < 0 || x1 > xScale.range()[1]) return;
+    const cx1 = Math.max(0, x1), cx2 = Math.min(xScale.range()[1], x2);
+    if(cx2 <= cx1) return;
+    const col = '#4fc3f7';
+    g.append('rect').attr('x',cx1).attr('y',0).attr('width',cx2-cx1).attr('height',h)
+     .attr('fill',col).attr('opacity',0.05).attr('pointer-events','none');
+    g.append('rect').attr('x',cx1).attr('y',0).attr('width',cx2-cx1).attr('height',h)
+     .attr('fill','none').attr('stroke',col).attr('stroke-width',0.5).attr('opacity',0.2)
+     .attr('stroke-dasharray','3,3').attr('pointer-events','none');
+    if(cx2 - cx1 > 8) {
+      g.append('text').attr('x',(cx1+cx2)/2).attr('y',h-4)
+       .attr('fill',col).attr('opacity',0.35)
+       .attr('font-size',7).attr('font-family','DM Mono,monospace')
+       .attr('text-anchor','middle').attr('pointer-events','none')
+       .text(r.name);
+    }
+  });
+}
+
+// ─── CHARTS ───────────────────────────────────────────────────────
+
+function chartBHS(daily) {
+  const {svg, W, H} = svgContainer('chart-bhs', 300);
+  const M = {top:20, right:70, bottom:55, left:45};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  const data = daily.filter(d => d.bhs !== null);
+  const xDates = data.map(d => new Date(d.date));
+
+  const xScale = d3.scaleTime().domain(d3.extent(xDates)).range([0,w]);
+  const yScale = d3.scaleLinear().domain([0,100]).range([h,0]);
+  const yRight = d3.scaleLinear().domain([0,60]).range([h,0]);
+
+  // Grid
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(5));
+
+  // Travel day shading — drawn first so everything renders on top
+  addTravelShading(g, xScale, h, M);
+
+  // Flare rate — area + visible line on right axis
+  const flareData = daily.filter(d=>d.flareR30!==null);
+  const flareArea = d3.area()
+    .x(d => xScale(new Date(d.date)))
+    .y0(h).y1(d => yRight(Math.min(d.flareR30, 60)))
+    .curve(d3.curveBasis);
+  const flareLine = d3.line()
+    .x(d => xScale(new Date(d.date)))
+    .y(d => yRight(Math.min(d.flareR30, 60)))
+    .curve(d3.curveBasis);
+  g.append('path').datum(flareData).attr('d', flareArea).attr('fill',C.red).attr('opacity',0.12);
+  g.append('path').datum(flareData).attr('d', flareLine).attr('fill','none')
+   .attr('stroke',C.red).attr('stroke-width',1.5).attr('opacity',0.7).attr('stroke-dasharray','4,2');
+
+  // BHS line
+  const bhsLine = d3.line()
+    .x(d => xScale(new Date(d.date)))
+    .y(d => yScale(d.bhs))
+    .defined(d => d.bhs !== null)
+    .curve(d3.curveBasis);
+
+  g.append('path').datum(data)
+   .attr('d', bhsLine).attr('fill','none')
+   .attr('stroke', C.accent).attr('stroke-width',2.5).attr('opacity',0.9);
+
+  // All intervention lines — faint for context
+  const otherEvents = INTERVENTIONS.filter(iv =>
+    iv.start !== '2024-11-25' && iv.start !== '2026-01-28'
+  );
+  otherEvents.forEach(ev => {
+    const x = xScale(new Date(ev.start));
+    if(x < 0 || x > w) return;
+    g.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',h)
+     .attr('stroke',ev.color).attr('stroke-width',1).attr('stroke-dasharray','3,3').attr('opacity',0.3);
+    g.append('text').attr('x',x-3).attr('y',8)
+     .attr('fill',ev.color).attr('font-size',7).attr('font-family','DM Mono,monospace')
+     .attr('text-anchor','end').attr('opacity',0.5)
+     .attr('transform',`rotate(-90,${x-3},8)`)
+     .text(ev.label.split(' ')[0]);
+  });
+
+  // Key events for chart context — bold and labeled
+  const keyEvents = [
+    {date:'2024-11-25', label:'Intervention start',  color:'#7b68ee'},
+    {date:'2026-01-28', label:'Intervention midpoint', color:'#27ae60'},
+  ];
+  keyEvents.forEach(ev => {
+    const x = xScale(new Date(ev.date));
+    if(x < 0 || x > w) return;
+    g.append('line').attr('x1',x).attr('x2',x).attr('y1',0).attr('y2',h)
+     .attr('stroke',ev.color).attr('stroke-width',2.5).attr('stroke-dasharray','6,3').attr('opacity',0.95);
+    g.append('text').attr('x',x-4).attr('y',10)
+     .attr('fill',ev.color).attr('font-size',9).attr('font-family','DM Mono,monospace')
+     .attr('font-weight','bold').attr('text-anchor','end')
+     .attr('transform',`rotate(-90,${x-4},10)`)
+     .text(ev.label);
+  });
+
+  // Dotted overlay for excluded (travel) segments on BHS line
+  const exclBhs = data.filter(d => EXCLUDED_SET.has(d.date));
+  if(exclBhs.length) {
+    // Draw dotted line segments for each excluded run
+    let run = [];
+    const flushRun = () => {
+      if(run.length < 2) { run = []; return; }
+      const dotLine = d3.line().x(d=>xScale(new Date(d.date))).y(d=>yScale(d.bhs)).curve(d3.curveBasis);
+      g.append('path').datum(run).attr('d',dotLine).attr('fill','none')
+       .attr('stroke',C.accent).attr('stroke-width',2.5).attr('stroke-dasharray','3,4')
+       .attr('opacity',0.45);
+      run = [];
+    };
+    data.forEach((d,i) => {
+      if(EXCLUDED_SET.has(d.date)) {
+        if(run.length === 0 && i > 0 && !EXCLUDED_SET.has(data[i-1].date)) run.push(data[i-1]);
+        run.push(d);
+      } else {
+        if(run.length) { run.push(d); flushRun(); }
+      }
+    });
+    flushRun();
+  }
+
+  // Flare day dots — plotted ON the BHS line at the correct y position
+  const flareDays = daily.filter(d => d.isFlare && d.bhs !== null);
+  g.selectAll('.flare-dot').data(flareDays).enter()
+   .append('circle')
+   .attr('class','flare-dot')
+   .attr('cx', d => xScale(new Date(d.date)))
+   .attr('cy', d => yScale(d.bhs))
+   .attr('r', 3)
+   .attr('fill', C.red)
+   .attr('stroke', C.bg)
+   .attr('stroke-width', 1)
+   .attr('opacity', 0.85);
+
+  // Hover crosshair + tooltip for BHS
+  const bisectBhs = d3.bisector(d => new Date(d.date)).left;
+  const hoverLineBhs = g.append('line').attr('y1',0).attr('y2',h)
+    .attr('stroke',C.border2).attr('stroke-width',1).attr('stroke-dasharray','3,3').attr('opacity',0).attr('pointer-events','none');
+  const hoverDotBhs = g.append('circle').attr('r',4).attr('fill',C.accent).attr('stroke',C.bg).attr('stroke-width',1.5).attr('opacity',0).attr('pointer-events','none');
+
+  g.append('rect').attr('width',w).attr('height',h).attr('fill','transparent')
+   .on('mousemove', function(event) {
+     const [mx] = d3.pointer(event, this);
+     const date0 = xScale.invert(mx);
+     const idx = Math.min(bisectBhs(data, date0, 1), data.length-1);
+     const d0 = data[idx-1], d1 = data[idx];
+     const d = (!d0 || !d1) ? (d0||d1) : (date0 - new Date(d0.date) > new Date(d1.date) - date0 ? d1 : d0);
+     if(!d || d.bhs === null) return;
+     const cx = xScale(new Date(d.date)), cy = yScale(d.bhs);
+     hoverLineBhs.attr('x1',cx).attr('x2',cx).attr('opacity',0.6);
+     hoverDotBhs.attr('cx',cx).attr('cy',cy).attr('opacity',1);
+     const excl = exclLabel(d.date), tzAdj = tzAdjLabel(d.date);
+     const flareRate = d.flareR30 !== null ? d.flareR30.toFixed(1)+'%' : '—';
+     const voids = d.count !== null ? d.count : '—';
+     const excRow = excl  ? `<div class="tt-excl">⚠ ${excl} (excluded)</div>`
+                 : tzAdj ? `<div class="tt-tzadj">⟳ tz-adjusted: ${tzAdj}</div>` : '';
+     showTooltip(event, `
+       <div class="tt-date">${fmtDate(d.date)}</div>
+       <div class="tt-row"><span class="tt-key">BHS</span><span class="tt-val ${bhsClass(d.bhs)}">${d.bhs.toFixed(1)}</span></div>
+       <div class="tt-row"><span class="tt-key">Voids</span><span class="tt-val ${d.count!==null?voidClass(d.count):''}">${voids}</span></div>
+       <div class="tt-row"><span class="tt-key">Nocturia</span><span class="tt-val ${d.noc!==undefined?nocClass(d.noc):''}">${d.noc !== undefined ? d.noc : '—'}</span></div>
+       <div class="tt-row"><span class="tt-key">Flare 30d%</span><span class="tt-val">${flareRate}</span></div>
+       ${excRow}
+     `);
+   })
+   .on('mouseleave', () => {
+     hoverLineBhs.attr('opacity',0);
+     hoverDotBhs.attr('opacity',0);
+     hideTooltip();
+   });
+
+  // Axes
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).ticks(d3.timeMonth.every(2)).tickFormat(d3.timeFormat('%b %y')));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yScale).ticks(5));
+  g.append('g').attr('class','axis').attr('transform',`translate(${w},0)`)
+   .call(d3.axisRight(yRight).ticks(4).tickFormat(d=>`${d}%`));
+
+  // Labels
+  svg.append('text').attr('x',M.left-35).attr('y',M.top+h/2)
+    .attr('fill',C.muted).attr('font-size',9).attr('font-family','DM Mono,monospace')
+    .attr('text-anchor','middle').attr('transform',`rotate(-90,${M.left-35},${M.top+h/2})`)
+    .text('BHS Score');
+  svg.append('text').attr('x',W-8).attr('y',M.top+h/2)
+    .attr('fill',C.red).attr('opacity',0.7).attr('font-size',9).attr('font-family','DM Mono,monospace')
+    .attr('text-anchor','middle').attr('transform',`rotate(90,${W-8},${M.top+h/2})`)
+    .text('Flare %');
+
+  const legData = [
+    {col:C.accent, lbl:'BHS 30d',     dash:false, dot:false},
+    {col:C.red,    lbl:'Flare % 30d', dash:true,  dot:false},
+    {col:C.red,    lbl:'Flare days',  dash:false, dot:true},
+  ];
+  legData.forEach((l,i) => {
+    const lx = i*95;
+    if(l.dot) {
+      g.append('circle').attr('cx',lx+5).attr('cy',h+42).attr('r',4)
+       .attr('fill',l.col).attr('stroke',C.bg).attr('stroke-width',1).attr('opacity',0.85);
+    } else {
+      g.append('line').attr('x1',lx).attr('x2',lx+22).attr('y1',h+42).attr('y2',h+42)
+       .attr('stroke',l.col).attr('stroke-width', l.dash?1.5:2.5)
+       .attr('stroke-dasharray', l.dash?'4,2':'none').attr('opacity',l.dash?0.7:0.9);
+    }
+    g.append('text').attr('x',lx+(l.dot?13:26)).attr('y',h+46)
+     .attr('fill',C.muted).attr('font-size',9).attr('font-family','DM Mono,monospace')
+     .text(l.lbl);
+  });
+}
+
+// ─── VIEW STATE ───────────────────────────────────────────────────
+let NOC_VIEW   = '30';
+let USD_VIEW   = 'all';
+let NOC_WINDOW = 'total'; // 'total' | 'true' | 'early'
+
+const NOC_WINDOW_META = {
+  total: { field:'noc',       rollField:'nocR30',      sub:'Events per night · 12:30am–7:30am · 30-day rolling avg',    color: null },
+  true:  { field:'nocTrue',   rollField:'nocTrueR30',  sub:'True nocturia · 12:30am–6:00am (sleep interruption) · 30-day rolling avg', color: '#9d7fe8' },
+  early: { field:'nocEarly',  rollField:'nocEarlyR30', sub:'Early morning · 6:00am–7:30am (wake-up zone) · 30-day rolling avg',        color: '#f5934a' },
+};
+
+function setNocWindow(w) {
+  NOC_WINDOW = w;
+  ['total','true','early'].forEach(k =>
+    document.getElementById(`noc-win-${k}`).classList.toggle('active', k===w));
+  const meta = NOC_WINDOW_META[w];
+  document.getElementById('noc-chart-sub').textContent = meta.sub;
+  chartNocturia(STATE.daily);
+}
+
+function setNocView(v) {
+  NOC_VIEW = v;
+  document.getElementById('noc-btn-30').classList.toggle('active', v==='30');
+  document.getElementById('noc-btn-all').classList.toggle('active', v==='all');
+  chartNocturia(STATE.daily);
+}
+function setUsdView(v) {
+  USD_VIEW = v;
+  document.getElementById('usd-btn-30').classList.toggle('active', v==='30');
+  document.getElementById('usd-btn-all').classList.toggle('active', v==='all');
+  chartUSD(STATE.daily);
+}
+
+function chartNocturia(daily) {
+  const {svg, W, H} = svgContainer('chart-noc', 220);
+  const M = {top:15, right:20, bottom:30, left:40};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  const meta      = NOC_WINDOW_META[NOC_WINDOW];
+  const field     = meta.field;
+  const rollField = meta.rollField;
+  const lineColor = meta.color || C.accent;
+
+  let data = daily.filter(d => d[field] !== undefined);
+  if(NOC_VIEW === '30') {
+    const cutoff = new Date(d3.max(data, d=>new Date(d.date)));
+    cutoff.setDate(cutoff.getDate() - 90);
+    data = data.filter(d => new Date(d.date) >= cutoff);
+  }
+
+  const xScale = d3.scaleTime().domain(d3.extent(data, d=>new Date(d.date))).range([0,w]);
+  const yScale = d3.scaleLinear().domain([0, Math.max(3, d3.max(data,d=>d[field])+0.5)]).range([h,0]);
+
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(4));
+
+  addTravelShading(g, xScale, h, M);
+
+  const barW = Math.max(1, w/data.length - 0.5);
+  data.forEach(d => {
+    const val = d[field];
+    const col = val === 0 ? C.green : val === 1 ? C.yellow : C.red;
+    g.append('rect')
+      .attr('x', xScale(new Date(d.date)) - barW/2)
+      .attr('y', yScale(val))
+      .attr('width', barW).attr('height', h - yScale(val))
+      .attr('fill', col).attr('opacity', 0.35);
+  });
+
+  const rollData = data.filter(d=>d[rollField]!==null);
+  const line = d3.line()
+    .x(d=>xScale(new Date(d.date))).y(d=>yScale(d[rollField]))
+    .curve(d3.curveBasis);
+  g.append('path').datum(rollData)
+   .attr('d',line).attr('fill','none').attr('stroke',lineColor).attr('stroke-width',2.5);
+
+  // Dotted overlay for excluded windows
+  let nocRun = [];
+  const flushNocRun = () => {
+    if(nocRun.length < 2) { nocRun=[]; return; }
+    const dl = d3.line().x(d=>xScale(new Date(d.date))).y(d=>yScale(d[rollField])).curve(d3.curveBasis);
+    g.append('path').datum(nocRun).attr('d',dl).attr('fill','none')
+     .attr('stroke',lineColor).attr('stroke-width',2.5).attr('stroke-dasharray','3,4').attr('opacity',0.4);
+    nocRun=[];
+  };
+  rollData.forEach((d,i)=>{
+    if(EXCLUDED_SET.has(d.date)){
+      if(nocRun.length===0 && i>0 && !EXCLUDED_SET.has(rollData[i-1].date)) nocRun.push(rollData[i-1]);
+      nocRun.push(d);
+    } else { if(nocRun.length){ nocRun.push(d); flushNocRun(); } }
+  });
+  flushNocRun();
+
+  // Hover overlay
+  const bisNoc = d3.bisector(d=>new Date(d.date)).left;
+  const hLineNoc = g.append('line').attr('y1',0).attr('y2',h).attr('stroke',C.border2).attr('stroke-width',1).attr('stroke-dasharray','3,3').attr('opacity',0).attr('pointer-events','none');
+  const hDotNoc  = g.append('circle').attr('r',4).attr('fill',lineColor).attr('stroke',C.bg).attr('stroke-width',1.5).attr('opacity',0).attr('pointer-events','none');
+  g.append('rect').attr('width',w).attr('height',h).attr('fill','transparent')
+   .on('mousemove', function(event){
+     const [mx]=d3.pointer(event,this);
+     const date0=xScale.invert(mx);
+     const idx=Math.min(bisNoc(data,date0,1),data.length-1);
+     const d0=data[idx-1],d1=data[idx];
+     const d=(!d0||!d1)?(d0||d1):(date0-new Date(d0.date)>new Date(d1.date)-date0?d1:d0);
+     if(!d) return;
+     const cx=xScale(new Date(d.date));
+     hLineNoc.attr('x1',cx).attr('x2',cx).attr('opacity',0.6);
+     if(d[rollField]!==null) hDotNoc.attr('cx',cx).attr('cy',yScale(d[rollField])).attr('opacity',1);
+     const excl=exclLabel(d.date), tzAdj=tzAdjLabel(d.date);
+     const excRow=excl  ?`<div class="tt-excl">⚠ ${excl} (excluded)</div>`
+                 :tzAdj?`<div class="tt-tzadj">⟳ tz-adjusted: ${tzAdj}</div>`:'';
+     const winLabel = NOC_WINDOW==='total'?'Total':NOC_WINDOW==='true'?'True noct.':'Early AM';
+     showTooltip(event,`
+       <div class="tt-date">${fmtDate(d.date)}</div>
+       <div class="tt-row"><span class="tt-key">${winLabel}</span><span class="tt-val ${nocClass(d[field])}">${d[field]}</span></div>
+       <div class="tt-row"><span class="tt-key">30d avg</span><span class="tt-val accent">${d[rollField]!==null?d[rollField].toFixed(2):'—'}</span></div>
+       <div class="tt-row"><span class="tt-key">Total voids</span><span class="tt-val ${d.count!==null?voidClass(d.count):''}">${d.count!==null?d.count:'—'}</span></div>
+       ${NOC_WINDOW==='total'?`<div class="tt-row"><span class="tt-key">True noct.</span><span class="tt-val">${d.nocTrue}</span></div><div class="tt-row"><span class="tt-key">Early AM</span><span class="tt-val">${d.nocEarly}</span></div>`:''}
+       ${excRow}
+     `);
+   })
+   .on('mouseleave',()=>{ hLineNoc.attr('opacity',0); hDotNoc.attr('opacity',0); hideTooltip(); });
+
+  const tickEvery = NOC_VIEW === 'all' ? d3.timeMonth.every(3) : d3.timeMonth.every(1);
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).ticks(tickEvery).tickFormat(d3.timeFormat('%b %y')));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yScale).ticks(4));
+}
+
+function chartUSD(daily) {
+  const {svg, W, H} = svgContainer('chart-usd', 220);
+  const M = {top:15, right:20, bottom:30, left:40};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  let data = daily.filter(d=>d.usd!==null);
+  if(USD_VIEW === '30') {
+    const cutoff = new Date(d3.max(data, d=>new Date(d.date)));
+    cutoff.setDate(cutoff.getDate() - 90);
+    data = data.filter(d => new Date(d.date) >= cutoff);
+  }
+
+  const xScale = d3.scaleTime().domain(d3.extent(data,d=>new Date(d.date))).range([0,w]);
+  const yMax = Math.max(5, d3.max(data,d=>d.usd)+0.5);
+  const yScale = d3.scaleLinear().domain([0,yMax]).range([h,0]);
+
+  const bands = [{lo:0,hi:1.5,col:C.green},{lo:1.5,hi:2.5,col:C.yellow},{lo:2.5,hi:yMax,col:C.red}];
+  bands.forEach(b => {
+    g.append('rect').attr('x',0).attr('y',yScale(Math.min(b.hi,yMax)))
+     .attr('width',w).attr('height',yScale(b.lo)-yScale(Math.min(b.hi,yMax)))
+     .attr('fill',b.col).attr('opacity',0.04);
+  });
+
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(4));
+
+  addTravelShading(g, xScale, h, M);
+
+  const area = d3.area().x(d=>xScale(new Date(d.date))).y0(h).y1(d=>yScale(d.usd)).curve(d3.curveBasis);
+  const line = d3.line().x(d=>xScale(new Date(d.date))).y(d=>yScale(d.usd)).curve(d3.curveBasis);
+
+  g.append('path').datum(data).attr('d',area).attr('fill',C.orange).attr('opacity',0.12);
+  g.append('path').datum(data).attr('d',line).attr('fill','none').attr('stroke',C.orange).attr('stroke-width',2.5);
+
+  // Dotted overlay for excluded windows
+  let usdRun=[];
+  const flushUsdRun=()=>{
+    if(usdRun.length<2){usdRun=[];return;}
+    const dl=d3.line().x(d=>xScale(new Date(d.date))).y(d=>yScale(d.usd)).curve(d3.curveBasis);
+    g.append('path').datum(usdRun).attr('d',dl).attr('fill','none')
+     .attr('stroke',C.orange).attr('stroke-width',2.5).attr('stroke-dasharray','3,4').attr('opacity',0.4);
+    usdRun=[];
+  };
+  data.forEach((d,i)=>{
+    if(EXCLUDED_SET.has(d.date)){
+      if(usdRun.length===0&&i>0&&!EXCLUDED_SET.has(data[i-1].date)) usdRun.push(data[i-1]);
+      usdRun.push(d);
+    } else { if(usdRun.length){usdRun.push(d);flushUsdRun();} }
+  });
+  flushUsdRun();
+
+  // Hover overlay
+  const bisUsd=d3.bisector(d=>new Date(d.date)).left;
+  const hLineUsd=g.append('line').attr('y1',0).attr('y2',h).attr('stroke',C.border2).attr('stroke-width',1).attr('stroke-dasharray','3,3').attr('opacity',0).attr('pointer-events','none');
+  const hDotUsd=g.append('circle').attr('r',4).attr('fill',C.orange).attr('stroke',C.bg).attr('stroke-width',1.5).attr('opacity',0).attr('pointer-events','none');
+  g.append('rect').attr('width',w).attr('height',h).attr('fill','transparent')
+   .on('mousemove',function(event){
+     const [mx]=d3.pointer(event,this);
+     const date0=xScale.invert(mx);
+     const idx=Math.min(bisUsd(data,date0,1),data.length-1);
+     const d0=data[idx-1],d1=data[idx];
+     const d=(!d0||!d1)?(d0||d1):(date0-new Date(d0.date)>new Date(d1.date)-date0?d1:d0);
+     if(!d||d.usd===null) return;
+     const cx=xScale(new Date(d.date));
+     hLineUsd.attr('x1',cx).attr('x2',cx).attr('opacity',0.6);
+     hDotUsd.attr('cx',cx).attr('cy',yScale(d.usd)).attr('opacity',1);
+     const zone=d.usd<1.5?'<span class="tt-val good">stable</span>':d.usd<2.5?'<span class="tt-val warn">elevated</span>':'<span class="tt-val bad">volatile</span>';
+     const excl=exclLabel(d.date), tzAdj=tzAdjLabel(d.date);
+     const excRow=excl  ?`<div class="tt-excl">⚠ ${excl} (excluded)</div>`
+                 :tzAdj?`<div class="tt-tzadj">⟳ tz-adjusted: ${tzAdj}</div>`:'';
+     showTooltip(event,`
+       <div class="tt-date">${fmtDate(d.date)}</div>
+       <div class="tt-row"><span class="tt-key">Upside SD</span><span class="tt-val accent">${d.usd.toFixed(2)}</span></div>
+       <div class="tt-row"><span class="tt-key">Zone</span>${zone}</div>
+       <div class="tt-row"><span class="tt-key">Total voids</span><span class="tt-val ${d.count!==null?voidClass(d.count):''}">${d.count!==null?d.count:'—'}</span></div>
+       ${excRow}
+     `);
+   })
+   .on('mouseleave',()=>{ hLineUsd.attr('opacity',0); hDotUsd.attr('opacity',0); hideTooltip(); });
+
+  [1.5,2.5].forEach(v => {
+    if(v > yMax) return;
+    g.append('line').attr('x1',0).attr('x2',w).attr('y1',yScale(v)).attr('y2',yScale(v))
+     .attr('stroke',C.border2).attr('stroke-dasharray','2,3');
+    g.append('text').attr('x',w+3).attr('y',yScale(v)+3)
+     .attr('fill',C.muted).attr('font-size',8).attr('font-family','DM Mono,monospace').text(v);
+  });
+
+  const tickEvery = USD_VIEW === 'all' ? d3.timeMonth.every(3) : d3.timeMonth.every(1);
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).ticks(tickEvery).tickFormat(d3.timeFormat('%b %y')));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yScale).ticks(4));
+}
+
+function chartHeatmap(voids) {
+  const {svg, W, H} = svgContainer('chart-heatmap', 220);
+  const M = {top:20, right:20, bottom:30, left:70};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const hours = d3.range(7,24).concat(d3.range(0,7));
+
+  // Count voids by dow × hour — exclude travel days
+  const cleanVoids = voids.filter(v => !EXCLUDED_SET.has(v.date));
+  const counts = {};
+  cleanVoids.forEach(v => {
+    const dow = new Date(v.date).getDay(); // 0=Sun
+    const dayIdx = dow === 0 ? 6 : dow - 1; // Mon=0
+    const key = `${dayIdx}-${v.hour}`;
+    counts[key] = (counts[key]||0) + 1;
+  });
+  const nDays = new Set(cleanVoids.map(v=>v.date)).size;
+  const nWeeks = nDays / 7;
+
+  // Build matrix
+  const matrix = [];
+  days.forEach((day,di) => {
+    hours.forEach(h => {
+      const rate = (counts[`${di}-${h}`]||0) / nWeeks;
+      matrix.push({day:di, hour:h, rate});
+    });
+  });
+
+  const xScale = d3.scaleBand().domain(hours).range([0,w]).padding(0.05);
+  const yScale = d3.scaleBand().domain(d3.range(7)).range([0,h]).padding(0.05);
+  const color  = d3.scaleSequential(d3.interpolateBlues).domain([0, d3.max(matrix,d=>d.rate)]);
+
+  matrix.forEach(d => {
+    const col = d.rate > 0 ? color(d.rate) : C.surface2;
+    g.append('rect')
+      .attr('x', xScale(d.hour)).attr('y', yScale(d.day))
+      .attr('width', xScale.bandwidth()).attr('height', yScale.bandwidth())
+      .attr('fill', col).attr('rx',2)
+      .on('mousemove', function(event) {
+        const h12 = d.hour===0?'12am':d.hour<12?`${d.hour}am`:d.hour===12?'12pm':`${d.hour-12}pm`;
+        showTooltip(event, `
+          <div class="tt-date">${days[d.day]} ${h12}</div>
+          <div class="tt-row"><span class="tt-key">Voids/week</span><span class="tt-val accent">${d.rate.toFixed(2)}</span></div>
+          <div class="tt-row"><span class="tt-key">Total</span><span class="tt-val">${(d.rate*nWeeks).toFixed(0)}</span></div>
+        `);
+      })
+      .on('mouseleave', hideTooltip);
+  });
+
+  const xTickHours = [0,3,6,9,12,15,18,21];
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).tickValues(xTickHours)
+     .tickFormat(h => h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`));
+  g.append('g').attr('class','axis')
+   .call(d3.axisLeft(yScale).tickFormat(i => days[i]));
+}
+
+function chartIVI(voids) {
+  const {svg, W, H} = svgContainer('chart-ivi', 220);
+  const M = {top:15, right:20, bottom:30, left:40};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  const maxDate = d3.max(voids, d=>new Date(d.date));
+  const cut30 = new Date(maxDate); cut30.setDate(cut30.getDate()-30);
+  const cut60 = new Date(maxDate); cut60.setDate(cut60.getDate()-60);
+
+  const curr = voids.filter(v=>new Date(v.date)>=cut30 && v.ivi!=null && !EXCLUDED_SET.has(v.date)).map(v=>v.ivi);
+  const prev = voids.filter(v=>new Date(v.date)>=cut60 && new Date(v.date)<cut30 && v.ivi!=null && !EXCLUDED_SET.has(v.date)).map(v=>v.ivi);
+
+  const bins = d3.range(0, 481, 30);
+  function binData(arr) {
+    const counts = new Array(bins.length-1).fill(0);
+    arr.forEach(v => {
+      const i = bins.findIndex((b,j) => j<bins.length-1 && v>=b && v<bins[j+1]);
+      if(i>=0) counts[i]++;
+    });
+    return counts.map((c,i) => ({x0:bins[i], x1:bins[i+1], pct: c/arr.length*100}));
+  }
+
+  const currBins = binData(curr);
+  const prevBins = binData(prev);
+
+  const xScale = d3.scaleLinear().domain([0,480]).range([0,w]);
+  const yMax = Math.max(d3.max(currBins,d=>d.pct), d3.max(prevBins,d=>d.pct));
+  const yScale = d3.scaleLinear().domain([0,yMax+2]).range([h,0]);
+
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(4));
+
+  // Build step-line point arrays: each bin contributes x0 and x1 at the same pct
+  function stepPts(bins) {
+    const pts = [];
+    bins.forEach(d => { pts.push([d.x0, d.pct]); pts.push([d.x1, d.pct]); });
+    return pts;
+  }
+  const lineGen = d3.line().x(d=>xScale(d[0])).y(d=>yScale(d[1]));
+
+  // Build closed area paths (step top + flat baseline return)
+  function areaPath(bins) {
+    const top = stepPts(bins);
+    const b0 = bins[0].x0, b1 = bins[bins.length-1].x1;
+    return lineGen(top) + `L${xScale(b1)},${yScale(0)} L${xScale(b0)},${yScale(0)} Z`;
+  }
+
+  // Prior 30d — filled area + step line
+  g.append('path').attr('d', areaPath(prevBins)).attr('fill', C.muted).attr('opacity', 0.12);
+  g.append('path').attr('d', lineGen(stepPts(prevBins))).attr('fill','none')
+   .attr('stroke', C.muted).attr('stroke-width', 1.5).attr('opacity', 0.65);
+
+  // Last 30d — filled area + step line
+  g.append('path').attr('d', areaPath(currBins)).attr('fill', C.accent).attr('opacity', 0.15);
+  g.append('path').attr('d', lineGen(stepPts(currBins))).attr('fill','none')
+   .attr('stroke', C.accent).attr('stroke-width', 1.5).attr('opacity', 0.9);
+
+  // Invisible hit-rects for tooltips (full bin width, full height)
+  const bw = xScale(30)-xScale(0);
+  currBins.forEach((d,bi) => {
+    const pd = prevBins[bi];
+    g.append('rect').attr('x',xScale(d.x0)).attr('y',0)
+     .attr('width',bw).attr('height',h).attr('fill','transparent')
+     .on('mousemove',function(event){
+       const label=d.x1>=480?'8h+':d.x0<60?`${d.x0}–${d.x1}m`:`${d.x0/60}–${d.x1/60}h`;
+       showTooltip(event,`<div class="tt-date">IVI · ${label}</div><div class="tt-row"><span class="tt-key">Last 30d</span><span class="tt-val accent">${d.pct.toFixed(1)}%</span></div><div class="tt-row"><span class="tt-key">Prior 30d</span><span class="tt-val">${pd?pd.pct.toFixed(1)+'%':'—'}</span></div>`);
+     }).on('mouseleave',hideTooltip);
+  });
+
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).tickValues([0,60,120,180,240,300,360,420,480])
+     .tickFormat(d => d===480?'8h+' : d===0?'0':d<60?`${d}m`:`${d/60}h`));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yScale).ticks(4).tickFormat(d=>`${d.toFixed(0)}%`));
+
+  // Legend — line swatches
+  [[C.muted,'Prior 30d'],[C.accent,'Last 30d']].forEach(([col,lbl],i) => {
+    const lx = w - 120 + i*65;
+    g.append('line').attr('x1',lx).attr('x2',lx+14).attr('y1',10).attr('y2',10)
+     .attr('stroke',col).attr('stroke-width',1.5).attr('opacity',0.9);
+    g.append('text').attr('x',lx+18).attr('y',14).attr('fill',C.muted).attr('font-size',9).attr('font-family','DM Mono,monospace').text(lbl);
+  });
+}
+
+function chartProfile(voids) {
+  const {svg, W, H} = svgContainer('chart-profile', 220);
+  const M = {top:15, right:20, bottom:30, left:40};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  const maxDate = d3.max(voids, d=>new Date(d.date));
+  const cut30 = new Date(maxDate); cut30.setDate(cut30.getDate()-30);
+  const cut60 = new Date(maxDate); cut60.setDate(cut60.getDate()-60);
+
+  function hourProfile(arr) {
+    const counts = new Array(24).fill(0);
+    arr.forEach(v => counts[v.hour]++);
+    const nCleanDays = new Set(arr.map(v=>v.date)).size || 1;
+    return counts.map((c,h) => ({hour:h, rate: c/nCleanDays}));
+  }
+
+  const curr = voids.filter(v=>new Date(v.date)>=cut30 && !EXCLUDED_SET.has(v.date));
+  const prev = voids.filter(v=>new Date(v.date)>=cut60 && new Date(v.date)<cut30 && !EXCLUDED_SET.has(v.date));
+
+  const currP = hourProfile(curr);
+  const prevP = hourProfile(prev);
+
+  const xScale = d3.scaleLinear().domain([0,23]).range([0,w]);
+  const yMax = Math.max(d3.max(currP,d=>d.rate), d3.max(prevP,d=>d.rate));
+  const yScale = d3.scaleLinear().domain([0,yMax+0.05]).range([h,0]);
+
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(4));
+
+  const mkLine = d3.line().x(d=>xScale(d.hour)).y(d=>yScale(d.rate)).curve(d3.curveCatmullRom);
+
+  g.append('path').datum(prevP).attr('d',mkLine).attr('fill','none')
+   .attr('stroke',C.muted).attr('stroke-width',1.5).attr('stroke-dasharray','3,3').attr('opacity',0.6);
+  g.append('path').datum(currP).attr('d',mkLine).attr('fill','none')
+   .attr('stroke',C.accent).attr('stroke-width',2.5);
+
+  // Hover overlay for hourly profile
+  const hDotProf = g.append('circle').attr('r',4).attr('fill',C.accent).attr('stroke',C.bg).attr('stroke-width',1.5).attr('opacity',0).attr('pointer-events','none');
+  const hDotProfP = g.append('circle').attr('r',4).attr('fill',C.muted).attr('stroke',C.bg).attr('stroke-width',1.5).attr('opacity',0).attr('pointer-events','none');
+  const hLineProf = g.append('line').attr('y1',0).attr('y2',h).attr('stroke',C.border2).attr('stroke-width',1).attr('stroke-dasharray','3,3').attr('opacity',0).attr('pointer-events','none');
+  g.append('rect').attr('width',w).attr('height',h).attr('fill','transparent')
+   .on('mousemove',function(event){
+     const [mx]=d3.pointer(event,this);
+     const hr=Math.round(xScale.invert(mx));
+     if(hr<0||hr>23) return;
+     const h12=hr===0?'12am':hr<12?`${hr}am`:hr===12?'12pm':`${hr-12}pm`;
+     const curr=currP.find(d=>d.hour===hr), prev=prevP.find(d=>d.hour===hr);
+     if(!curr) return;
+     const cx=xScale(hr);
+     hLineProf.attr('x1',cx).attr('x2',cx).attr('opacity',0.6);
+     hDotProf.attr('cx',cx).attr('cy',yScale(curr.rate)).attr('opacity',1);
+     if(prev) hDotProfP.attr('cx',cx).attr('cy',yScale(prev.rate)).attr('opacity',0.7);
+     const delta=prev?(curr.rate-prev.rate):0;
+     const dClass=delta<-0.05?'good':delta>0.05?'bad':'accent';
+     showTooltip(event,`
+       <div class="tt-date">${h12}</div>
+       <div class="tt-row"><span class="tt-key">Last 30d</span><span class="tt-val accent">${curr.rate.toFixed(2)}/d</span></div>
+       ${prev?`<div class="tt-row"><span class="tt-key">Prior 30d</span><span class="tt-val">${prev.rate.toFixed(2)}/d</span></div>
+       <div class="tt-row"><span class="tt-key">Δ</span><span class="tt-val ${dClass}">${delta>=0?'+':''}${delta.toFixed(2)}</span></div>`:''}
+     `);
+   })
+   .on('mouseleave',()=>{ hLineProf.attr('opacity',0); hDotProf.attr('opacity',0); hDotProfP.attr('opacity',0); hideTooltip(); });
+
+  // Shade nocturia zone
+  g.append('rect').attr('x',xScale(NOC_START)).attr('y',0)
+   .attr('width',xScale(NOC_END)-xScale(NOC_START)).attr('height',h)
+   .attr('fill',C.purple).attr('opacity',0.06);
+  g.append('text').attr('x',xScale((NOC_START+NOC_END)/2)).attr('y',8)
+   .attr('fill',C.purple).attr('font-size',8).attr('font-family','DM Mono,monospace')
+   .attr('text-anchor','middle').attr('opacity',0.5).text('nocturia');
+
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).tickValues([0,3,6,9,12,15,18,21])
+     .tickFormat(h=>h===0?'12am':h<12?`${h}am`:h===12?'12pm':`${h-12}pm`));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yScale).ticks(4).tickFormat(d=>d.toFixed(2)));
+}
+
+function chartPresleep(voids) {
+  const {svg, W, H} = svgContainer('chart-presleep', 220);
+  const M = {top:15, right:20, bottom:30, left:40};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  // Pre-sleep hours: 21, 22, 23, 0 (before 0.5)
+  const psHours = [21,22,23,0];
+  const psLabels = ['9pm','10pm','11pm','12am'];
+
+  // Monthly rates per hour
+  const byMonth = d3.group(voids.filter(v=>!EXCLUDED_SET.has(v.date)), v => v.date.slice(0,7));
+  const months = [...byMonth.keys()].sort();
+
+  const series = psHours.map((h,i) => ({
+    hour:h, label:psLabels[i],
+    data: months.map(m => {
+      const mv = byMonth.get(m)||[];
+      const nDays = new Set(mv.map(v=>v.date)).size || 1;
+      const count = mv.filter(v => h===0 ? v.hourFrac < 0.5 : v.hour===h).length;
+      return {month:m, rate: count/nDays};
+    })
+  }));
+
+  const xScale = d3.scaleBand().domain(months).range([0,w]).padding(0.15);
+  const yMax = d3.max(series.flatMap(s=>s.data.map(d=>d.rate)));
+  const yScale = d3.scaleLinear().domain([0,Math.max(1,yMax+0.1)]).range([h,0]);
+  const colors = [C.purple,C.red,C.orange,C.yellow];
+
+  const stack = d3.stack().keys(psHours.map(String))
+    .value((d,k) => {
+      const s = series.find(s=>String(s.hour)===k);
+      return s ? (s.data.find(x=>x.month===d.month)?.rate||0) : 0;
+    });
+
+  // Simple grouped bars instead of stack
+  const subScale = d3.scaleBand().domain(psHours.map(String)).range([0,xScale.bandwidth()]).padding(0.05);
+
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(4));
+
+  series.forEach((s,si) => {
+    g.selectAll(`.bar-${si}`).data(s.data).enter().append('rect')
+      .attr('x', d => (xScale(d.month)||0) + subScale(String(s.hour)))
+      .attr('y', d => yScale(d.rate))
+      .attr('width', subScale.bandwidth())
+      .attr('height', d => h - yScale(d.rate))
+      .attr('fill', colors[si]).attr('opacity',0.75).attr('rx',1)
+      .on('mousemove', function(event, d) {
+        const mo = new Date(d.month+'-15').toLocaleDateString('en-US',{month:'short',year:'numeric'});
+        showTooltip(event,`
+          <div class="tt-date">${mo} · ${s.label}</div>
+          <div class="tt-row"><span class="tt-key">Voids/night</span><span class="tt-val accent">${d.rate.toFixed(2)}</span></div>
+        `);
+      })
+      .on('mouseleave', hideTooltip);
+  });
+
+  // Sparse x axis - every 3 months
+  const tickMonths = months.filter((_,i)=>i%3===0);
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).tickValues(tickMonths).tickFormat(m=>m.slice(2)));
+  g.append('g').attr('class','axis').call(d3.axisLeft(yScale).ticks(4).tickFormat(d=>d.toFixed(1)));
+
+  // Legend
+  psHours.forEach((h,i) => {
+    const lx = i * 55;
+    g.append('rect').attr('x',lx).attr('y',-12).attr('width',8).attr('height',8).attr('fill',colors[i]).attr('opacity',0.75);
+    g.append('text').attr('x',lx+11).attr('y',-4).attr('fill',C.muted).attr('font-size',8).attr('font-family','DM Mono,monospace').text(psLabels[i]);
+  });
+}
+
+function chartDistribution(daily) {
+  const {svg, W, H} = svgContainer('chart-distribution', 220);
+  const M = {top:20, right:20, bottom:30, left:40};
+  const w = W - M.left - M.right, h = H - M.top - M.bottom;
+  const g = svg.append('g').attr('transform',`translate(${M.left},${M.top})`);
+
+  const byMonth = d3.group(daily.filter(d=>d.count!==null && !EXCLUDED_SET.has(d.date)), d => d.date.slice(0,7));
+  const months  = [...byMonth.keys()].sort();
+  const monthly = months.map(m => {
+    const days = byMonth.get(m);
+    const n    = days.length || 1;
+    return {
+      month: m,
+      good:  days.filter(d=>d.isGood).length / n * 100,
+      mid:   days.filter(d=>!d.isGood&&!d.isBad).length / n * 100,
+      bad:   days.filter(d=>d.isBad).length / n * 100,
+    };
+  });
+
+  const xScale = d3.scaleBand().domain(months).range([0,w]).padding(0.15);
+  const yScale = d3.scaleLinear().domain([0,100]).range([h,0]);
+
+  g.append('g').attr('class','grid')
+   .call(d3.axisLeft(yScale).tickSize(-w).tickFormat('').ticks(4));
+
+  // Stacked bars: bad (top), mid (middle), good (bottom)
+  monthly.forEach(d => {
+    let y = h;
+    const segs = [
+      {val:d.good, col:C.green,  label:'Good (≤9)'},
+      {val:d.mid,  col:C.dim,    label:'Mid (10–12)'},
+      {val:d.bad,  col:C.red,    label:'Bad (≥13)'},
+    ];
+    segs.forEach(s => {
+      const barH = (s.val/100) * h;
+      y -= barH;
+      g.append('rect')
+        .attr('x', xScale(d.month)).attr('y', y)
+        .attr('width', xScale.bandwidth()).attr('height', barH)
+        .attr('fill', s.col).attr('opacity', 0.75).attr('rx', 1)
+        .on('mousemove', function(event) {
+          const mo = new Date(d.month+'-15').toLocaleDateString('en-US',{month:'short',year:'numeric'});
+          showTooltip(event,`
+            <div class="tt-date">${mo}</div>
+            <div class="tt-row"><span class="tt-key">${s.label}</span><span class="tt-val">${s.val.toFixed(0)}%</span></div>
+            <div class="tt-row"><span class="tt-key">Good</span><span class="tt-val good">${d.good.toFixed(0)}%</span></div>
+            <div class="tt-row"><span class="tt-key">Bad</span><span class="tt-val bad">${d.bad.toFixed(0)}%</span></div>
+          `);
+        })
+        .on('mouseleave', hideTooltip);
+    });
+  });
+
+  // Intervention markers
+  INTERVENTIONS.forEach(iv => {
+    const mi = months.findIndex(m => m >= iv.start.slice(0,7));
+    if(mi < 0) return;
+    g.append('line').attr('x1', xScale(months[mi])).attr('x2', xScale(months[mi]))
+     .attr('y1', -6).attr('y2', 0)
+     .attr('stroke', iv.color).attr('stroke-width', 2).attr('opacity', 0.8);
+  });
+
+  const tickMonths = months.filter((_,i)=>i%2===0);
+  g.append('g').attr('class','axis').attr('transform',`translate(0,${h})`)
+   .call(d3.axisBottom(xScale).tickValues(tickMonths).tickFormat(m=>m.slice(2)));
+  g.append('g').attr('class','axis')
+   .call(d3.axisLeft(yScale).ticks(4).tickFormat(d=>`${d}%`));
+
+  // Legend
+  [[C.green,'≤9 (good)'],[C.dim,'10–12'],[C.red,'≥13 (bad)']].forEach(([col,lbl],i) => {
+    const lx = i * 85;
+    g.append('rect').attr('x',lx).attr('y',-14).attr('width',10).attr('height',10)
+     .attr('fill',col).attr('opacity',0.75).attr('rx',2);
+    g.append('text').attr('x',lx+14).attr('y',-5)
+     .attr('fill',C.muted).attr('font-size',9).attr('font-family','DM Mono,monospace').text(lbl);
+  });
+}
+
+// ─── INTERVENTION SCORECARD ───────────────────────────────────────
+function renderScorecard(daily) {
+  const tbody = document.getElementById('scorecard-body');
+  const today = getTodayLogical();
+
+  // Scaled end window: ~25% of intervention length, clamped 7–30 days
+  const endWindowDays = (totalDays) => {
+    if (totalDays < 30)  return 7;
+    if (totalDays < 60)  return 14;
+    if (totalDays < 90)  return 21;
+    return 30;
+  };
+
+  // Get N clean non-excluded days ending on toStr (walking backwards)
+  const trailingCleanMean = (field, toStr, w) => {
+    const to = new Date(toStr);
+    const vals = [];
+    for (let i = daily.length - 1; i >= 0 && vals.length < w; i--) {
+      const rd = new Date(daily[i].date);
+      if (rd > to) continue;
+      if (EXCLUDED_SET.has(daily[i].date)) continue;
+      if (daily[i].count === null) continue;
+      if (daily[i][field] === null || daily[i][field] === undefined) continue;
+      vals.push(daily[i][field]);
+    }
+    return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+  };
+
+  const trailingCleanRate = (field, toStr, w) => {
+    const to = new Date(toStr);
+    const vals = [];
+    for (let i = daily.length - 1; i >= 0 && vals.length < w; i--) {
+      const rd = new Date(daily[i].date);
+      if (rd > to) continue;
+      if (EXCLUDED_SET.has(daily[i].date)) continue;
+      if (daily[i].count === null) continue;
+      vals.push(daily[i][field] ? 1 : 0);
+    }
+    return vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length*100 : null;
+  };
+
+  const typeMap = {med:'pill-med',supp:'pill-supp',procedure:'pill-proc'};
+  const typeLbl = {med:'medication',supp:'supplement',procedure:'procedure'};
+
+  const rows = INTERVENTIONS.map(iv => {
+    const isActive  = !iv.end || iv.end >= today;
+    const statusCls = isActive ? 'status-active' : 'status-complete';
+    const statusTxt = isActive ? '● active' : '✓ complete';
+
+    const endDate  = iv.end && iv.end < today ? iv.end : today;
+    const dayCount = Math.round((new Date(endDate) - new Date(iv.start)) / 86400000);
+
+    // Baseline: 30 clean days immediately BEFORE intervention start
+    const dayBefore = new Date(new Date(iv.start).getTime() - 86400000).toISOString().slice(0,10);
+    const startBHS      = trailingCleanMean('bhs',      dayBefore, 30);
+    const startNoc      = trailingCleanMean('nocTrue',  dayBefore, 30);
+    const startNocEarly = trailingCleanMean('nocEarly', dayBefore, 30);
+    const startBad      = trailingCleanRate('isBad',    dayBefore, 30);
+
+    // End/now: scaled trailing window ending at endDate
+    const w = endWindowDays(dayCount);
+    const endBHS      = trailingCleanMean('bhs',      endDate, w);
+    const endNoc      = trailingCleanMean('nocTrue',  endDate, w);
+    const endNocEarly = trailingCleanMean('nocEarly', endDate, w);
+    const endBad      = trailingCleanRate('isBad',    endDate, w);
+
+    const deltaBHS = startBHS != null && endBHS != null ? endBHS - startBHS : null;
+
+    const fmt = v => v !== null ? v.toFixed(1) : '—';
+    const fmtDelta = (v, good='up') => {
+      if(v===null) return '<span class="neu">—</span>';
+      const cls = (good==='up'&&v>2)||(good==='down'&&v<-0.5) ? 'pos' :
+                  (good==='up'&&v<-2)||(good==='down'&&v>0.5) ? 'neg' : 'neu';
+      return `<span class="${cls} delta-cell">${v>0?'+':''}${v.toFixed(1)}</span>`;
+    };
+
+    return `<tr>
+      <td style="color:${iv.color};font-weight:500;">${iv.label}</td>
+      <td><span class="pill ${typeMap[iv.type]||'pill-supp'}">${typeLbl[iv.type]||iv.type}</span></td>
+      <td style="color:var(--muted)">${iv.start} → ${iv.end||'ongoing'}</td>
+      <td style="color:var(--muted)">${dayCount}</td>
+      <td>${fmt(startBHS)}</td>
+      <td>${fmt(endBHS)}</td>
+      <td>${fmtDelta(deltaBHS,'up')}</td>
+      <td>${fmt(startNoc)}/night</td>
+      <td>${fmt(endNoc)}/night</td>
+      <td>${fmt(startNocEarly)}/night</td>
+      <td>${fmt(endNocEarly)}/night</td>
+      <td>${fmt(startBad)}%</td>
+      <td>${fmt(endBad)}%</td>
+      <td class="${statusCls}">${statusTxt}</td>
+    </tr>`;
+  });
+
+  // Upcoming
+  const upcomingRows = UPCOMING.map(iv => `
+    <tr style="opacity:0.55">
+      <td style="color:${iv.color}">${iv.label}</td>
+      <td><span class="pill pill-upcoming">planned</span></td>
+      <td style="color:var(--muted)">${iv.start} →</td>
+      <td style="color:var(--muted)">—</td>
+      <td colspan="10" style="color:var(--muted);font-size:11px;">not yet started</td>
+    </tr>
+  `);
+
+  tbody.innerHTML = rows.join('') + upcomingRows.join('');
+}
+
+// ─── PROTOCOL TIMELINE ────────────────────────────────────────────
+function renderTimeline() {
+  const today = getTodayLogical();
+  const tl = document.getElementById('protocol-timeline');
+
+  const rows = [
+    ...INTERVENTIONS.map(iv => ({
+      ...iv,
+      status: !iv.end || iv.end > today ? 'active' : 'complete'
+    })),
+    ...UPCOMING.map(iv => ({...iv, type:'planned', status:'upcoming'}))
+  ].sort((a,b) => a.start.localeCompare(b.start));
+
+  tl.innerHTML = rows.map(r => `
+    <div class="timeline-row">
+      <div class="tl-dot" style="background:${r.color}"></div>
+      <div class="tl-label">${r.label}</div>
+      <div class="tl-date">${r.start}${r.end?' → '+r.end:r.status==='active'?' → ongoing':''}</div>
+      <div class="tl-status status-${r.status}">${
+        r.status==='active'?'● active':r.status==='complete'?'✓ done':'◦ planned'
+      }</div>
+    </div>
+  `).join('');
+}
+
+// ─── MAIN RENDER ──────────────────────────────────────────────────
+function render(csvText, fromStorage = false) {
+  const rows = parseCSV(csvText);
+  const voids = processRaw(rows);
+
+  // When reloading from storage, freeze the "today" cutoff at the logical date
+  // the file was originally saved. This keeps the BHS score stable when the
+  // same file is viewed on a later day — the score only changes when the user
+  // explicitly loads a new file (fromStorage = false), which resets the cutoff
+  // to real today. When loading from storage on a later calendar day, advance
+  // the cutoff to today so the previous day's complete data becomes visible.
+  let cutoffDate;
+  if (fromStorage) {
+    const saved = localStorage.getItem('bladder_csv_saved');
+    if (saved) {
+      const savedDate = toEastern(new Date(saved)).date;
+      const todayDate = getCalendarDateET();
+      cutoffDate = savedDate > todayDate ? savedDate : todayDate;
+    }
+  }
+
+  const daily = buildDaily(voids, cutoffDate);
+
+  // Exclude today from voids too — use calendar date cutoff so charts that
+  // use the raw voids array (heatmap, IVI, profile, presleep) are consistent
+  const todayLogical = cutoffDate || getCalendarDateET();
+  const voidsComplete = voids.filter(v => v.date < todayLogical);
+
+  STATE = { raw: rows, daily, voids: voidsComplete };
+
+  // Update header — show actual file date range, not the cutoff-filtered range.
+  // voidsComplete excludes today's partial data for metrics, but the header should
+  // reflect what data is actually in the file (stable regardless of what day you view it).
+  const fileDates = voids.map(v => v.date);
+  const minD = fileDates[0], maxD = fileDates[fileDates.length - 1];
+  document.getElementById('data-range').textContent = `${minD} → ${maxD}  ·  ${voids.length.toLocaleString()} void events`;
+
+  if (!fromStorage) {
+    try {
+      localStorage.setItem('bladder_csv', csvText);
+      localStorage.setItem('bladder_csv_saved', new Date().toISOString());
+    } catch(e) { console.warn('[Storage] Could not save CSV:', e); }
+    document.getElementById('last-updated').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+  } else {
+    const saved = localStorage.getItem('bladder_csv_saved');
+    const label = saved ? new Date(saved).toLocaleDateString(undefined, {month:'short', day:'numeric', year:'numeric'}) : 'cached';
+    document.getElementById('last-updated').textContent = `Saved: ${label}`;
+  }
+
+  // Show dashboard
+  document.getElementById('upload-screen').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+
+  // Render
+  renderMetrics(daily);
+  renderScorecard(daily);
+  renderTimeline();
+  // Two-pass render: first pass after brief layout settle, second after full paint
+  function renderAllCharts() {
+    const charts = [
+      ['chartBHS',          () => chartBHS(daily)],
+      ['chartNocturia',     () => chartNocturia(daily)],
+      ['chartUSD',          () => chartUSD(daily)],
+      ['chartHeatmap',      () => chartHeatmap(voidsComplete)],
+      ['chartIVI',          () => chartIVI(voidsComplete)],
+      ['chartProfile',      () => chartProfile(voidsComplete)],
+      ['chartPresleep',     () => chartPresleep(voidsComplete)],
+      ['chartDistribution', () => chartDistribution(daily)],
+    ];
+    charts.forEach(([name, fn]) => {
+      try { fn(); }
+      catch(e) { console.error(`[${name}] ERROR:`, e.message, e.stack); }
+    });
+  }
+  setTimeout(renderAllCharts, 100);
+  setTimeout(renderAllCharts, 600);
+}
+
+// ─── FILE HANDLING ────────────────────────────────────────────────
+function showUploadError(msg) {
+  const el = document.getElementById('upload-error');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function clearUploadError() {
+  const el = document.getElementById('upload-error');
+  if (el) { el.textContent = ''; el.style.display = 'none'; }
+}
+
+function handleFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  clearUploadError();
+  const reader = new FileReader();
+  reader.onerror = () => showUploadError('Could not read the file. Please try again.');
+  reader.onload = e => {
+    try {
+      const text = e.target.result;
+      if (!text || !text.trim()) {
+        showUploadError('The file appears to be empty.');
+        return;
+      }
+      // Quick column check before full render
+      const firstLine = text.split(/\r?\n/)[0] || '';
+      const hasPeeCol   = firstLine.includes('Pee Date and Time');
+      const hasStartCol = firstLine.includes('startDate');
+      if (!hasPeeCol && !hasStartCol) {
+        showUploadError(
+          'Unrecognized CSV format.\n' +
+          'Expected a P App export with a "Pee Date and Time" column.\n' +
+          'First header row found: ' + firstLine.slice(0, 120)
+        );
+        return;
+      }
+      render(text);
+    } catch (err) {
+      console.error('[handleFile] render error:', err);
+      showUploadError('Failed to load file: ' + (err.message || String(err)));
+    }
+  };
+  reader.readAsText(file);
+}
+
+// Drag and drop
+const uploadBox = document.getElementById('upload-box');
+uploadBox.addEventListener('dragover', e => { e.preventDefault(); uploadBox.classList.add('drag-over'); });
+uploadBox.addEventListener('dragleave', () => uploadBox.classList.remove('drag-over'));
+uploadBox.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadBox.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  clearUploadError();
+  const reader = new FileReader();
+  reader.onerror = () => showUploadError('Could not read the dropped file. Please try again.');
+  reader.onload = ev => {
+    try {
+      render(ev.target.result);
+    } catch (err) {
+      console.error('[drop] render error:', err);
+      showUploadError('Failed to load file: ' + (err.message || String(err)));
+    }
+  };
+  reader.readAsText(file);
+});
+
+// Demo data
+function loadSampleData() {
+  // Generate 90 days of plausible void data
+  const rows = [];
+  const start = new Date(); start.setDate(start.getDate()-90);
+  for(let d=0; d<90; d++) {
+    const date = new Date(start); date.setDate(date.getDate()+d);
+    const ds = date.toISOString().slice(0,10);
+    const nVoids = 8 + Math.round(Math.random()*5);
+    const hours = [];
+    // Distribute voids across day
+    const slots = [7,9,11,13,15,17,19,21,23,1,5].slice(0,nVoids);
+    slots.sort((a,b)=>a-b);
+    slots.forEach(h => {
+      const m = Math.floor(Math.random()*60);
+      rows.push({startDate: `${ds} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00-05:00`});
+    });
+  }
+  const csv = Papa.unparse(rows);
+  render(csv);
+}
+
+// Handle window resize — debounced, also fires on iPhone orientation change
+function redrawAllCharts() {
+  if(!STATE.daily.length) return;
+  const charts = [
+    ['chartBHS',          () => chartBHS(STATE.daily)],
+    ['chartNocturia',     () => chartNocturia(STATE.daily)],
+    ['chartUSD',          () => chartUSD(STATE.daily)],
+    ['chartHeatmap',      () => chartHeatmap(STATE.voids)],
+    ['chartIVI',          () => chartIVI(STATE.voids)],
+    ['chartProfile',      () => chartProfile(STATE.voids)],
+    ['chartPresleep',     () => chartPresleep(STATE.voids)],
+    ['chartDistribution', () => chartDistribution(STATE.daily)],
+  ];
+  charts.forEach(([name, fn]) => {
+    try { fn(); }
+    catch(e) { console.error(`[${name}] ERROR:`, e.message, e.stack); }
+  });
+}
+
+let _resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(redrawAllCharts, 150);
+});
+
+// iPhone orientation change fires resize but sometimes needs an extra tick
+window.addEventListener('orientationchange', () => {
+  setTimeout(redrawAllCharts, 300);
+});
+
+// ─── VERSION DISPLAY ──────────────────────────────────────────────
+document.getElementById('app-version').textContent = APP_VERSION;
+document.getElementById('upload-version').textContent = APP_VERSION;
+document.getElementById('dashboard-version').textContent = APP_VERSION;
+
+// ─── AUTO-LOAD SAVED CSV ──────────────────────────────────────────
+(function() {
+  const saved = localStorage.getItem('bladder_csv');
+  if (saved) {
+    try {
+      render(saved, true);
+    } catch(e) {
+      console.warn('[Storage] Saved CSV failed to render, clearing:', e);
+      localStorage.removeItem('bladder_csv');
+      localStorage.removeItem('bladder_csv_saved');
+    }
+  }
+})();
+
+// ─── SERVICE WORKER (PWA) ─────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => {
+      console.warn('[SW] Registration failed:', err);
+    });
+  });
+}
+</script>
+</body>
+</html>
